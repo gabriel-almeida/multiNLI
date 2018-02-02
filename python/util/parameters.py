@@ -89,7 +89,8 @@ def load_parameters():
         "learning_rate": args.learning_rate,
         "emb_train": args.emb_train,
         "alpha": args.alpha,
-        "genre": args.genre
+        "genre": args.genre,
+        "pi": 0.01
     }
 
     return FIXED_PARAMETERS

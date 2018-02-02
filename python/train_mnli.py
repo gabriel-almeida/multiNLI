@@ -7,6 +7,7 @@ import tensorflow as tf
 import os
 import importlib
 import random
+from util import logic_regularizer
 from util import logger
 import util.parameters as params
 from util.data_processing import *
@@ -86,7 +87,11 @@ class modelClassifier:
         self.model = MyModel(seq_length=self.sequence_length, emb_dim=self.embedding_dim,  hidden_dim=self.dim, embeddings=loaded_embeddings, emb_train=self.emb_train)
 
         # Perform gradient descent with Adam
-        self.optimizer = tf.train.AdamOptimizer(self.learning_rate, beta1=0.9, beta2=0.999).minimize(self.model.total_cost)
+        pi = FIXED_PARAMETERS["pi"]
+        self.logic_reg_value = logic_regularizer.logic_loss(self.model.original_probs, self.model.reverse_probs)
+        loss = (1-pi)*self.model.total_cost + pi*self.logic_reg_value
+
+        self.optimizer = tf.train.AdamOptimizer(self.learning_rate, beta1=0.9, beta2=0.999).minimize(loss)
 
         # Boolean stating that training has not been completed, 
         self.completed = False 
@@ -149,6 +154,7 @@ class modelClassifier:
             random.shuffle(training_data)
             avg_cost = 0.
             total_batch = int(len(training_data) / self.batch_size)
+            logic_reg_values = []
 
             # Loop over all batches in epoch
             for i in range(total_batch):
@@ -162,7 +168,9 @@ class modelClassifier:
                                 self.model.hypothesis_x: minibatch_hypothesis_vectors,
                                 self.model.y: minibatch_labels, 
                                 self.model.keep_rate_ph: self.keep_rate}
-                _, c = self.sess.run([self.optimizer, self.model.total_cost], feed_dict)
+
+                _, c, logic_reg = self.sess.run([self.optimizer, self.model.total_cost, self.logic_reg_value], feed_dict)
+                logic_reg_values += [logic_reg]
 
                 # Since a single epoch can take a  ages for larger models (ESIM),
                 # we'll print  accuracy every 50 steps
@@ -179,6 +187,9 @@ class modelClassifier:
                     else:
                         logger.Log("Step: %i\t Dev-matched acc: %f\t Dev-mismatched acc: %f\t Dev-SNLI acc: %f\t MultiNLI train acc: %f" %(self.step, dev_acc_mat, dev_acc_mismat, dev_acc_snli, mtrain_acc))
                         logger.Log("Step: %i\t Dev-matched cost: %f\t Dev-mismatched cost: %f\t Dev-SNLI cost: %f\t MultiNLI train cost: %f" %(self.step, dev_cost_mat, dev_cost_mismat, dev_cost_snli, mtrain_cost))
+
+                    logger.Log("logic_reg: %s (%s)" % (np.mean(logic_reg_values), np.std(logic_reg_values)))
+                    logic_reg_values = []
 
                 if self.step % 500 == 0:
                     self.saver.save(self.sess, ckpt_file)
