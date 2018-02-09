@@ -79,10 +79,12 @@ class modelClassifier:
         ## Define hyperparameters
         self.learning_rate =  FIXED_PARAMETERS["learning_rate"]
         self.display_epoch_freq = 1
-        self.display_step_freq = 200
+        self.display_step_freq = FIXED_PARAMETERS["display_step"]
         self.embedding_dim = FIXED_PARAMETERS["word_embedding_dim"]
         self.dim = FIXED_PARAMETERS["hidden_embedding_dim"]
         self.batch_size = FIXED_PARAMETERS["batch_size"]
+        self.eval_batch_size = FIXED_PARAMETERS["eval_batch_size"]
+        self.max_patience = FIXED_PARAMETERS["patience"]
         self.emb_train = FIXED_PARAMETERS["emb_train"]
         self.keep_rate = FIXED_PARAMETERS["keep_rate"]
         self.sequence_length = FIXED_PARAMETERS["seq_length"] 
@@ -110,7 +112,6 @@ class modelClassifier:
         self.sess = None
         self.saver = tf.train.Saver()
 
-
     def get_minibatch(self, dataset, start_index, end_index):
         indices = range(start_index, end_index)
         premise_vectors = np.vstack([dataset[i]['sentence1_binary_parse_index_sequence'] for i in indices])
@@ -119,13 +120,11 @@ class modelClassifier:
         labels = [dataset[i]['label'] for i in indices]
         return premise_vectors, hypothesis_vectors, labels, genres
 
-
-    def train(self, train_mnli, train_snli, dev_mat, dev_mismat, dev_snli):        
+    def train(self, train_mnli, train_snli, dev_mat, dev_mismat, dev_snli):
         self.sess = tf.Session()
         self.sess.run(self.init)
 
         self.max_epochs = FIXED_PARAMETERS["epochs"]
-        self.max_patience = 25
         self.patience = self.max_patience
         self.step = 0
         self.epoch = 0
@@ -140,12 +139,12 @@ class modelClassifier:
         if os.path.isfile(ckpt_file + ".meta"):
             if os.path.isfile(ckpt_file + "_best.meta"):
                 self.saver.restore(self.sess, (ckpt_file + "_best"))
-                self.best_dev_mat, dev_cost_mat = evaluate_classifier(self.classify, dev_mat, self.batch_size)
-                best_dev_mismat, dev_cost_mismat = evaluate_classifier(self.classify, dev_mismat, self.batch_size)
-                best_dev_snli, dev_cost_snli = evaluate_classifier(self.classify, dev_snli, self.batch_size)
-                self.best_mtrain_acc, mtrain_cost = evaluate_classifier(self.classify, train_mnli[0:5000], self.batch_size)
+                self.best_dev_mat, dev_cost_mat = evaluate_classifier(self.classify, dev_mat, self.eval_batch_size)
+                best_dev_mismat, dev_cost_mismat = evaluate_classifier(self.classify, dev_mismat, self.eval_batch_size)
+                best_dev_snli, dev_cost_snli = evaluate_classifier(self.classify, dev_snli, self.eval_batch_size)
+                self.best_mtrain_acc, mtrain_cost = evaluate_classifier(self.classify, train_mnli[0:5000], self.eval_batch_size)
                 if self.alpha != 0.:
-                    self.best_strain_acc, strain_cost = evaluate_classifier(self.classify, train_snli[0:5000], self.batch_size)
+                    self.best_strain_acc, strain_cost = evaluate_classifier(self.classify, train_snli[0:5000], self.eval_batch_size)
                     logger.Log("Restored best matched-dev acc: %f\n Restored best mismatched-dev acc: %f\n \
                             Restored best SNLI-dev acc: %f\n Restored best MulitNLI train acc: %f\n \
                             Restored best SNLI train acc: %f" %(self.best_dev_mat, best_dev_mismat, best_dev_snli, 
@@ -191,13 +190,13 @@ class modelClassifier:
                 # Since a single epoch can take a  ages for larger models (ESIM),
                 # we'll print  accuracy every 50 steps
                 if self.step % self.display_step_freq == 0 or i == (total_batch - 1):
-                    dev_acc_mat, dev_cost_mat = evaluate_classifier(self.classify, dev_mat, self.batch_size)
-                    dev_acc_mismat, dev_cost_mismat = evaluate_classifier(self.classify, dev_mismat, self.batch_size)
-                    dev_acc_snli, dev_cost_snli = evaluate_classifier(self.classify, dev_snli, self.batch_size)
-                    mtrain_acc, mtrain_cost = evaluate_classifier(self.classify, train_mnli[0:5000], self.batch_size)
+                    dev_acc_mat, dev_cost_mat = evaluate_classifier(self.classify, dev_mat, self.eval_batch_size)
+                    dev_acc_mismat, dev_cost_mismat = evaluate_classifier(self.classify, dev_mismat, self.eval_batch_size)
+                    dev_acc_snli, dev_cost_snli = evaluate_classifier(self.classify, dev_snli, self.eval_batch_size)
+                    mtrain_acc, mtrain_cost = evaluate_classifier(self.classify, train_mnli[0:5000], self.eval_batch_size)
 
                     if self.alpha != 0.:
-                        strain_acc, strain_cost = evaluate_classifier(self.classify, train_snli[0:5000], self.batch_size)
+                        strain_acc, strain_cost = evaluate_classifier(self.classify, train_snli[0:5000], self.eval_batch_size)
                         logger.Log("Step: %i\t Dev-matched acc: %f\t Dev-mismatched acc: %f\t \
                             Dev-SNLI acc: %f\t MultiNLI train acc: %f\t SNLI train acc: %f"
                                    % (self.step, dev_acc_mat, dev_acc_mismat, dev_acc_snli, mtrain_acc, strain_acc))
@@ -246,7 +245,7 @@ class modelClassifier:
         logger.Log("MultiNLI Train accuracy: %s" %(self.best_mtrain_acc))
         self.completed = True
 
-    def classify(self, examples):
+    def classify(self, examples, test=False):
         # This classifies a list of examples
         if (test == True) or (self.completed == True):
             best_path = os.path.join(FIXED_PARAMETERS["ckpt_path"], modname) + ".ckpt_best"
@@ -254,13 +253,12 @@ class modelClassifier:
             self.sess.run(self.init)
             self.saver.restore(self.sess, best_path)
             logger.Log("Model restored from file: %s" % best_path)
-
-        total_batch = int(len(examples) / self.batch_size)
+        total_batch = int(len(examples) / self.eval_batch_size)
         logits = np.empty(3)
         genres = []
         for i in range(total_batch):
-            minibatch_premise_vectors, minibatch_hypothesis_vectors, minibatch_labels, minibatch_genres = self.get_minibatch(examples, 
-                                    self.batch_size * i, self.batch_size * (i + 1))
+            minibatch_premise_vectors, minibatch_hypothesis_vectors, minibatch_labels, minibatch_genres = \
+                self.get_minibatch(examples, self.eval_batch_size * i, self.eval_batch_size * (i + 1))
             feed_dict = {self.model.premise_x: minibatch_premise_vectors, 
                                 self.model.hypothesis_x: minibatch_hypothesis_vectors,
                                 self.model.y: minibatch_labels, 
@@ -281,25 +279,6 @@ class modelClassifier:
         self.saver.restore(self.sess, path)
         logger.Log("Model restored from file: %s" % path)
 
-    def classify(self, examples):
-        # This classifies a list of examples
-        total_batch = int(len(examples) / self.batch_size)
-        logits = np.empty(3)
-        genres = []
-        for i in range(total_batch):
-            minibatch_premise_vectors, minibatch_hypothesis_vectors, minibatch_labels, minibatch_genres = self.get_minibatch(examples, 
-                                    self.batch_size * i, self.batch_size * (i + 1))
-            feed_dict = {self.model.premise_x: minibatch_premise_vectors, 
-                                self.model.hypothesis_x: minibatch_hypothesis_vectors,
-                                self.model.y: minibatch_labels, 
-                                self.model.keep_rate_ph: 1.0}
-            genres += minibatch_genres
-            logit, cost = self.sess.run([self.model.logits, self.model.total_cost], feed_dict)
-            logits = np.vstack([logits, logit])
-
-        return genres, np.argmax(logits[1:], axis=1), cost
-
-
 
 classifier = modelClassifier(FIXED_PARAMETERS["seq_length"], loaded_embeddings)
 
@@ -318,14 +297,14 @@ print("ALL RESULTS ON TEST")
 if test == False:
     classifier.train(training_mnli, training_snli, dev_matched, dev_mismatched, dev_snli)
     logger.Log("Acc on matched multiNLI dev-set: %s" 
-        % (evaluate_classifier(classifier.classify, test_matched, FIXED_PARAMETERS["batch_size"]))[0])
+        % (evaluate_classifier(classifier.classify, test_matched, FIXED_PARAMETERS["eval_batch_size"]))[0])
     logger.Log("Acc on mismatched multiNLI dev-set: %s" 
-        % (evaluate_classifier(classifier.classify, test_mismatched, FIXED_PARAMETERS["batch_size"]))[0])
+        % (evaluate_classifier(classifier.classify, test_mismatched, FIXED_PARAMETERS["eval_batch_size"]))[0])
     logger.Log("Acc on SNLI test-set: %s" 
-        % (evaluate_classifier(classifier.classify, test_snli, FIXED_PARAMETERS["batch_size"]))[0])
+        % (evaluate_classifier(classifier.classify, test_snli, FIXED_PARAMETERS["eval_batch_size"]))[0])
 else: 
     results, bylength = evaluate_final(classifier.restore, classifier.classify, 
-        [test_matched, test_mismatched, test_snli], FIXED_PARAMETERS["batch_size"])
+        [test_matched, test_mismatched, test_snli], FIXED_PARAMETERS["eval_batch_size"])
     logger.Log("Acc on multiNLI matched dev-set: %s" %(results[0]))
     logger.Log("Acc on multiNLI mismatched dev-set: %s" %(results[1]))
     logger.Log("Acc on SNLI test set: %s" %(results[2]))
@@ -335,7 +314,7 @@ else:
 
     # Results by genre,
     logger.Log("Acc on matched genre dev-sets: %s" 
-        % (evaluate_classifier_genre(classifier.classify, test_matched, FIXED_PARAMETERS["batch_size"])[0]))
+        % (evaluate_classifier_genre(classifier.classify, test_matched, FIXED_PARAMETERS["eval_batch_size"])[0]))
     logger.Log("Acc on mismatched genres dev-sets: %s" 
-        % (evaluate_classifier_genre(classifier.classify, test_mismatched, FIXED_PARAMETERS["batch_size"])[0]))
+        % (evaluate_classifier_genre(classifier.classify, test_mismatched, FIXED_PARAMETERS["eval_batch_size"])[0]))
 

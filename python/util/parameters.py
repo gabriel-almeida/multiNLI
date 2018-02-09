@@ -46,6 +46,11 @@ parser.add_argument("--genre", type=str, help="Which genre to train on")
 parser.add_argument("--alpha", type=float, default=0., help="What percentage of SNLI data to use in training")
 parser.add_argument("--epochs", type=int, default=10, help="Max number of epochs")
 parser.add_argument("--pi", type=float, default=0.01, help="Regularizer strenght in the training")
+parser.add_argument("--eval_batch_size", type=int, default=2000, help="Evaluation minibatch size")
+parser.add_argument("--display_step", type=int, default=250, help="Count of steps to evaluate on dev set")
+parser.add_argument("--patience", type=int, default=25, help="Count of steps to wait for stop early stop")
+parser.add_argument("--train_file", type=str, default="multinli_1.0.jsonl",
+                    help="Name of the train file .jsonl on multinli_1.0/ directory")
 
 parser.add_argument("--test", action='store_true', help="Call if you want to only test on the best checkpoint.")
 
@@ -85,17 +90,14 @@ def load_parameters():
     FIXED_PARAMETERS = {
         "model_type": args.model_type,
         "model_name": args.model_name,
-        #"training_mnli": "{}/multinli_1.0/multinli_1.0_train.jsonl".format(args.datapath),
-        "training_mnli": "{}/multinli_1.0/multinli_1.jsonl".format(args.datapath),
+        "training_mnli": "{}/multinli_1.0/{}".format(args.datapath, args.train_file),
         "dev_matched": "{}/multinli_1.0/multinli_1.0_dev_matched.jsonl".format(args.datapath),
         "dev_mismatched": "{}/multinli_1.0/multinli_1.0_dev_mismatched.jsonl".format(args.datapath),
         "test_matched": test_matched,
         "test_mismatched": test_mismatched,
         "training_snli": "{}/snli_1.0/snli_1.0_train.jsonl".format(args.datapath),
-        #"training_snli": "{}/snli_1.0/snli_1.0_dev.jsonl".format(args.datapath),
         "dev_snli": "{}/snli_1.0/snli_1.0_dev.jsonl".format(args.datapath),
         "test_snli": "{}/snli_1.0/snli_1.0_test.jsonl".format(args.datapath),
-        #"embedding_data_path": "{}/glove/teste_glove.txt".format(args.datapath),
         "embedding_data_path": "{}/glove/glove.840B.300d.txt".format(args.datapath),
         "log_path": "{}".format(args.logpath),
         "ckpt_path":  "{}".format(args.ckptpath),
@@ -110,7 +112,10 @@ def load_parameters():
         "alpha": args.alpha,
         "genre": args.genre,
         "pi": args.pi,
-        "epochs": args.epochs
+        "epochs": args.epochs,
+        "eval_batch_size": args.eval_batch_size,
+        "display_step": args.display_step,
+        "patience": args.patience
     }
 
     return FIXED_PARAMETERS
