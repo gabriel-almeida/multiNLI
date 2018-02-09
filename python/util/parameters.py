@@ -44,6 +44,7 @@ parser.add_argument("--emb_train", action='store_true', help="Call if you want t
 
 parser.add_argument("--genre", type=str, help="Which genre to train on")
 parser.add_argument("--alpha", type=float, default=0., help="What percentage of SNLI data to use in training")
+parser.add_argument("--epochs", type=int, default=10, help="Max number of epochs")
 
 parser.add_argument("--test", action='store_true', help="Call if you want to only test on the best checkpoint.")
 
@@ -107,7 +108,8 @@ def load_parameters():
         "emb_train": args.emb_train,
         "alpha": args.alpha,
         "genre": args.genre,
-        "pi": 0.01
+        "pi": 0.01,
+        "epochs": args.epochs
     }
 
     return FIXED_PARAMETERS
