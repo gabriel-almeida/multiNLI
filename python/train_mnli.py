@@ -79,7 +79,7 @@ class modelClassifier:
         ## Define hyperparameters
         self.learning_rate =  FIXED_PARAMETERS["learning_rate"]
         self.display_epoch_freq = 1
-        self.display_step_freq = 50
+        self.display_step_freq = 200
         self.embedding_dim = FIXED_PARAMETERS["word_embedding_dim"]
         self.dim = FIXED_PARAMETERS["hidden_embedding_dim"]
         self.batch_size = FIXED_PARAMETERS["batch_size"]
@@ -190,7 +190,7 @@ class modelClassifier:
 
                 # Since a single epoch can take a  ages for larger models (ESIM),
                 # we'll print  accuracy every 50 steps
-                if self.step % self.display_step_freq == 0:
+                if self.step % self.display_step_freq == 0 or i == (total_batch - 1):
                     dev_acc_mat, dev_cost_mat = evaluate_classifier(self.classify, dev_mat, self.batch_size)
                     dev_acc_mismat, dev_cost_mismat = evaluate_classifier(self.classify, dev_mismat, self.batch_size)
                     dev_acc_snli, dev_cost_snli = evaluate_classifier(self.classify, dev_snli, self.batch_size)

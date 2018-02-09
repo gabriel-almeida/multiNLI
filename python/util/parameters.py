@@ -45,6 +45,7 @@ parser.add_argument("--emb_train", action='store_true', help="Call if you want t
 parser.add_argument("--genre", type=str, help="Which genre to train on")
 parser.add_argument("--alpha", type=float, default=0., help="What percentage of SNLI data to use in training")
 parser.add_argument("--epochs", type=int, default=10, help="Max number of epochs")
+parser.add_argument("--pi", type=float, default=0.01, help="Regularizer strenght in the training")
 
 parser.add_argument("--test", action='store_true', help="Call if you want to only test on the best checkpoint.")
 
@@ -52,14 +53,14 @@ args = parser.parse_args()
 
 """
 # Check if test sets are available. If not, create an empty file.
-test_matched = "{}/multinli_0.9/multinli_0.9_test_matched_unlabeled.jsonl".format(args.datapath)
+test_matched = "{}/multinli_1.0/multinli_1.0_test_matched_unlabeled.jsonl".format(args.datapath)
 
 if os.path.isfile(test_matched):
-    test_matched = "{}/multinli_0.9/multinli_0.9_test_matched_unlabeled.jsonl".format(args.datapath)
-    test_mismatched = "{}/multinli_0.9/multinli_0.9_test_matched_unlabeled.jsonl".format(args.datapath)
-    test_path = "{}/multinli_0.9/".format(args.datapath)
+    test_matched = "{}/multinli_1.0/multinli_1.0_test_matched_unlabeled.jsonl".format(args.datapath)
+    test_mismatched = "{}/multinli_1.0/multinli_1.0_test_matched_unlabeled.jsonl".format(args.datapath)
+    test_path = "{}/multinli_1.0/".format(args.datapath)
 else:
-    test_path = "{}/multinli_0.9/".format(args.datapath)
+    test_path = "{}/multinli_1.0/".format(args.datapath)
     temp_file = os.path.join(test_path, "temp.jsonl")
     io.open(temp_file, "wb")
     test_matched = temp_file
@@ -84,23 +85,23 @@ def load_parameters():
     FIXED_PARAMETERS = {
         "model_type": args.model_type,
         "model_name": args.model_name,
-        "training_mnli": "{}/multinli_0.9/multinli_0.9_train.jsonl".format(args.datapath),
-        "dev_matched": "{}/multinli_0.9/multinli_0.9_dev_matched.jsonl".format(args.datapath),
-        "dev_mismatched": "{}/multinli_0.9/multinli_0.9_dev_mismatched.jsonl".format(args.datapath),
+        #"training_mnli": "{}/multinli_1.0/multinli_1.0_train.jsonl".format(args.datapath),
+        "training_mnli": "{}/multinli_1.0/multinli_1.jsonl".format(args.datapath),
+        "dev_matched": "{}/multinli_1.0/multinli_1.0_dev_matched.jsonl".format(args.datapath),
+        "dev_mismatched": "{}/multinli_1.0/multinli_1.0_dev_mismatched.jsonl".format(args.datapath),
         "test_matched": test_matched,
         "test_mismatched": test_mismatched,
         "training_snli": "{}/snli_1.0/snli_1.0_train.jsonl".format(args.datapath),
+        #"training_snli": "{}/snli_1.0/snli_1.0_dev.jsonl".format(args.datapath),
         "dev_snli": "{}/snli_1.0/snli_1.0_dev.jsonl".format(args.datapath),
         "test_snli": "{}/snli_1.0/snli_1.0_test.jsonl".format(args.datapath),
-        "embedding_data_path": "{}/glove.840B.300d.txt".format(args.datapath),
-        #"embedding_data_path": "{}/glove.6B.50d.txt".format(args.datapath),
+        #"embedding_data_path": "{}/glove/teste_glove.txt".format(args.datapath),
+        "embedding_data_path": "{}/glove/glove.840B.300d.txt".format(args.datapath),
         "log_path": "{}".format(args.logpath),
         "ckpt_path":  "{}".format(args.ckptpath),
         "embeddings_to_load": args.emb_to_load,
         "word_embedding_dim": 300,
         "hidden_embedding_dim": 300,
-        #"word_embedding_dim": 50,
-        #"hidden_embedding_dim": 50,
         "seq_length": args.seq_length,
         "keep_rate": args.keep_rate, 
         "batch_size": 32,
@@ -108,7 +109,7 @@ def load_parameters():
         "emb_train": args.emb_train,
         "alpha": args.alpha,
         "genre": args.genre,
-        "pi": 0.01,
+        "pi": args.pi,
         "epochs": args.epochs
     }
 
