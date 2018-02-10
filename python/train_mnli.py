@@ -209,8 +209,8 @@ class modelClassifier:
                     if self.display_step is None:
                         self.display_step = math.floor(eval_time/batch_time/self.display_step_ratio)
                         n_evals_epoch = self.display_step / total_batch
-                        if n_evals_epoch < 2.:  # if too little, just wait until end of the epoch
-                            self.display_step = total_batch
+                        if n_evals_epoch < 1.:  # if too little, just wait until end of the epoch
+                            self.display_step = total_batch - 1
                         self.display_step = int(self.display_step)
                         logger.Log("Evaluating on every %s steps" % self.display_step)
 
