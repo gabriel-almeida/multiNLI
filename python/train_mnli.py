@@ -7,7 +7,9 @@ If alpha = 0, no SNLI data is used in training. If alpha > 0, then down-sampled 
 import tensorflow as tf
 import os
 import importlib
+import time
 import random
+import math
 from util import logic_regularizer
 from util import logger
 import util.parameters as params
@@ -79,7 +81,7 @@ class modelClassifier:
         ## Define hyperparameters
         self.learning_rate =  FIXED_PARAMETERS["learning_rate"]
         self.display_epoch_freq = 1
-        self.display_step_freq = FIXED_PARAMETERS["display_step"]
+        self.display_step_ratio = FIXED_PARAMETERS["display_step_ratio"]
         self.embedding_dim = FIXED_PARAMETERS["word_embedding_dim"]
         self.dim = FIXED_PARAMETERS["hidden_embedding_dim"]
         self.batch_size = FIXED_PARAMETERS["batch_size"]
@@ -130,6 +132,7 @@ class modelClassifier:
         self.epoch = 0
         self.best_dev_mat = 0.
         self.best_mtrain_acc = 0.
+        self.display_step = None
 
         self.sess.run(self.model.embedding_init, feed_dict={self.model.embedding_placeholder: self.word_embeddings})
 
@@ -170,6 +173,8 @@ class modelClassifier:
             avg_cost = 0.
             total_batch = int(len(training_data) / self.batch_size)
             logic_reg_values = []
+            batch_times = []
+            loss_values = []
 
             # Loop over all batches in epoch
             for i in range(total_batch):
@@ -184,16 +189,31 @@ class modelClassifier:
                              self.model.y: minibatch_labels,
                              self.model.keep_rate_ph: self.keep_rate}
 
+                begin_batch_time = time.time()
                 _, c, logic_reg = self.sess.run([self.optimizer, self.model.total_cost, self.logic_reg_value], feed_dict)
+                batch_time = time.time() - begin_batch_time
+                batch_times += [batch_time]
                 logic_reg_values += [logic_reg]
+                loss_values += [c]
 
                 # Since a single epoch can take a  ages for larger models (ESIM),
                 # we'll print  accuracy every 50 steps
-                if self.step % self.display_step_freq == 0 or i == (total_batch - 1):
+                if self.display_step is None or self.step % self.display_step == 0 or i == (total_batch - 1):
+                    begin_eval_time = time.time()
                     dev_acc_mat, dev_cost_mat = evaluate_classifier(self.classify, dev_mat, self.eval_batch_size)
                     dev_acc_mismat, dev_cost_mismat = evaluate_classifier(self.classify, dev_mismat, self.eval_batch_size)
                     dev_acc_snli, dev_cost_snli = evaluate_classifier(self.classify, dev_snli, self.eval_batch_size)
                     mtrain_acc, mtrain_cost = evaluate_classifier(self.classify, train_mnli[0:5000], self.eval_batch_size)
+                    eval_time = time.time() - begin_eval_time
+
+                    if self.display_step is None:
+                        self.display_step = math.floor(eval_time/batch_time/self.display_step_ratio)
+                        n_evals_epoch = self.display_step / total_batch
+                        if n_evals_epoch < 2.:  # if too little, just wait until end of the epoch
+                            self.display_step = total_batch
+                        self.display_step = int(self.display_step)
+                        logger.Log("Evaluating on every %s steps" % self.display_step)
+
 
                     if self.alpha != 0.:
                         strain_acc, strain_cost = evaluate_classifier(self.classify, train_snli[0:5000], self.eval_batch_size)
@@ -211,8 +231,13 @@ class modelClassifier:
                             Dev-SNLI cost: %f\t MultiNLI train cost: %f" %(self.step, dev_cost_mat,
                                                                            dev_cost_mismat, dev_cost_snli, mtrain_cost))
 
-                    logger.Log("logic_reg: %s (%s)" % (np.mean(logic_reg_values), np.std(logic_reg_values)))
+                    logger.Log("Logic regularization cost: %s (%s)" % (np.mean(logic_reg_values), np.std(logic_reg_values)))
+                    logger.Log("Train loss: %s (%s)" % (np.mean(loss_values), np.std(loss_values)))
+                    logger.Log("Batch time: %s (%s)" % (np.mean(batch_times), np.std(batch_times)))
+                    logger.Log("Evaluation time: %s" % (eval_time))
                     logic_reg_values = []
+                    batch_times = []
+                    loss_values = []
 
                     improvement_ratio = 100.0 * (1.0 - self.best_dev_mat / dev_acc_mat)
                     if improvement_ratio > 0.1:
