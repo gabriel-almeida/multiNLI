@@ -196,9 +196,7 @@ class modelClassifier:
                 logic_reg_values += [logic_reg]
                 loss_values += [c]
 
-                # Since a single epoch can take a  ages for larger models (ESIM),
-                # we'll print  accuracy every 50 steps
-                if self.display_step is None or self.step % self.display_step == 0 or i == (total_batch - 1):
+                if self.display_step is None or (self.step % total_batch) % self.display_step == 0 or i == (total_batch - 1):
                     begin_eval_time = time.time()
                     dev_acc_mat, dev_cost_mat = evaluate_classifier(self.classify, dev_mat, self.eval_batch_size)
                     dev_acc_mismat, dev_cost_mismat = evaluate_classifier(self.classify, dev_mismat, self.eval_batch_size)
@@ -207,12 +205,11 @@ class modelClassifier:
                     eval_time = time.time() - begin_eval_time
 
                     if self.display_step is None:
-                        self.display_step = math.floor(eval_time/batch_time/self.display_step_ratio)
-                        n_evals_epoch = self.display_step / total_batch
-                        if n_evals_epoch < 1.:  # if too little, just wait until end of the epoch
-                            self.display_step = total_batch - 1
-                        self.display_step = int(self.display_step)
-                        logger.Log("Evaluating on every %s steps" % self.display_step)
+                        optimal_display_step = eval_time/batch_time/self.display_step_ratio
+                        n_evals_epoch = max(total_batch // optimal_display_step, 1)
+                        # avoid evals next to the end of the epoch
+                        self.display_step = int(math.floor(1.0*total_batch/n_evals_epoch))
+                        logger.Log("Evaluating on every %s steps (%s time per epoch)" % (self.display_step, n_evals_epoch))
 
 
                     if self.alpha != 0.:
@@ -251,20 +248,19 @@ class modelClassifier:
                     else:
                         self.patience -= 1
                         logger.Log("Reducing patience: %s" % self.patience)
-                        if self.patience == 0:
+                        if self.patience < 0:
                             break
 
                 self.step += 1
 
                 # Compute average loss
                 avg_cost += c / (total_batch * self.batch_size)
-
-                if self.patience == 0:
-                    break
                                 
             # Display some statistics about the epoch
             if self.epoch % self.display_epoch_freq == 0:
                 logger.Log("Epoch: %i\t Avg. Cost: %f" %(self.epoch+1, avg_cost))
+            if self.patience < 0:
+                break
 
         logger.Log("Best matched-dev accuracy: %s" %(self.best_dev_mat))
         logger.Log("MultiNLI Train accuracy: %s" %(self.best_mtrain_acc))
