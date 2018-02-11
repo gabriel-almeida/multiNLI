@@ -196,7 +196,7 @@ class modelClassifier:
                 logic_reg_values += [logic_reg]
                 loss_values += [c]
 
-                if self.display_step is None or (self.step % total_batch) % self.display_step == 0 or i == (total_batch - 1):
+                if self.display_step is None or (self.step % total_batch) % self.display_step == 0:
                     begin_eval_time = time.time()
                     dev_acc_mat, dev_cost_mat = evaluate_classifier(self.classify, dev_mat, self.eval_batch_size)
                     dev_acc_mismat, dev_cost_mismat = evaluate_classifier(self.classify, dev_mismat, self.eval_batch_size)
