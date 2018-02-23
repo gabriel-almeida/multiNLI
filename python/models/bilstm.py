@@ -88,16 +88,16 @@ class MyModel(object):
         ##################
 
         # Define the cost function
-        supervised_idx = tf.not_equal(self.y, -1)
+        supervised_idx = tf.not_equal(self.y, tf.constant(-1))
 
-        supervised_logits = self.logits[:, supervised_idx]
-        supervised_y = self.y[:, supervised_idx]
+        supervised_logits = tf.boolean_mask(self.logits, supervised_idx)
+        supervised_y = tf.boolean_mask(self.y, supervised_idx)
         total_supervision = tf.reduce_sum(tf.cast(supervised_idx, dtype=tf.float32))
 
-        self.total_cost = tf.cond(tf.greater_equal(total_supervision, tf.constant(1)),
+        self.total_cost = tf.cond(tf.greater_equal(total_supervision, tf.constant(1.0)),
                                   lambda: tf.reduce_sum(tf.nn.sparse_softmax_cross_entropy_with_logits(
                                       labels=supervised_y, logits=supervised_logits)) / total_supervision,
-                                  lambda: tf.constant(0))
+                                  lambda: tf.constant(0.0))
 
         self.inference_value = tf.reduce_mean(logic_regularizer.semantic_inference(self.original_probs,
                                                                                    self.reverse_probs))
@@ -105,7 +105,7 @@ class MyModel(object):
                                                                                            self.reverse_probs))
 
         self.only_one_original_value = tf.reduce_mean(logic_regularizer.semantic_only_one(self.original_probs))
-        self.only_one_reverse_value = tf.reduce_mean(logic_regularizer.semantic_only_one(self.reverse_probs))
+        self.only_one_reversed_value = tf.reduce_mean(logic_regularizer.semantic_only_one(self.reverse_probs))
 
         self.regularized_loss = self.total_cost + self.pi * (self.inference_value + self.contradiction_value +
-                                                             self.only_one_original_value + self.only_one_reverse_value)
+                                                             self.only_one_original_value + self.only_one_reversed_value)

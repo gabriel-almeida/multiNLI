@@ -185,9 +185,13 @@ class modelClassifier:
         only_one_original_loss = []
         only_one_reversed_loss = []
 
+        total_labels = 0
         for val in train_mnli:
             if random.random() < self.unsupervised_ratio:
                 val['label'] = -1
+            else:
+                total_labels = total_labels + 1
+        logger.Log("Total labels: " + str(total_labels))
 
         for self.epoch in range(self.max_epochs):
             training_data = train_mnli + random.sample(train_snli, beta)
