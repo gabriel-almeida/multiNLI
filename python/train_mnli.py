@@ -10,6 +10,7 @@ import importlib
 import time
 import random
 import math
+import multiprocessing
 from util import logic_regularizer
 from util import logger
 import util.parameters as params
@@ -38,11 +39,15 @@ training_snli = load_nli_data(FIXED_PARAMETERS["training_snli"], snli=True)
 dev_snli = load_nli_data(FIXED_PARAMETERS["dev_snli"], snli=True)
 test_snli = load_nli_data(FIXED_PARAMETERS["test_snli"], snli=True)
 
+logger.Log("Loaded sentences SNLI - Train: %s | Dev: %s | Test: %s" % (len(training_snli), len(dev_snli), len(test_snli)))
+
 training_mnli = load_nli_data(FIXED_PARAMETERS["training_mnli"])
 dev_matched = load_nli_data(FIXED_PARAMETERS["dev_matched"])
 dev_mismatched = load_nli_data(FIXED_PARAMETERS["dev_mismatched"])
 test_matched = load_nli_data(FIXED_PARAMETERS["test_matched"])
 test_mismatched = load_nli_data(FIXED_PARAMETERS["test_mismatched"])
+
+logger.Log("Loaded sentences MultiNLI - Train: %s | Matched Dev: %s | Mismatched Dev: %s" % (len(training_mnli), len(dev_matched), len(dev_mismatched)))
 
 if 'temp.jsonl' in FIXED_PARAMETERS["test_matched"]:
     # Removing temporary empty file that was created in parameters.py
@@ -85,6 +90,7 @@ class modelClassifier:
         self.embedding_dim = FIXED_PARAMETERS["word_embedding_dim"]
         self.dim = FIXED_PARAMETERS["hidden_embedding_dim"]
         self.batch_size = FIXED_PARAMETERS["batch_size"]
+        n_samples = 0
         self.eval_batch_size = FIXED_PARAMETERS["eval_batch_size"]
         self.max_patience = FIXED_PARAMETERS["patience"]
         self.emb_train = FIXED_PARAMETERS["emb_train"]
@@ -100,10 +106,16 @@ class modelClassifier:
 
         # Perform gradient descent with Adam
         pi = FIXED_PARAMETERS["pi"]
-        self.logic_reg_value = logic_regularizer.logic_loss(self.model.original_probs, self.model.reverse_probs)
-        loss = (1-pi)*self.model.total_cost + pi*self.logic_reg_value
+        self.inference_value =  tf.reduce_mean(-tf.log(logic_regularizer.inference_rule(self.model.original_probs, self.model.reverse_probs)+0.0001))
+        self.contradiction_value = tf.reduce_mean(-tf.log(logic_regularizer.contradiction_rule(self.model.original_probs, self.model.reverse_probs)+0.0001))
 
-        self.optimizer = tf.train.AdamOptimizer(self.learning_rate, beta1=0.9, beta2=0.999).minimize(loss)
+        #self.inference_value = tf.reduce_mean(logic_regularizer.inference_regularization_squared(self.model.original_probs, self.model.reverse_probs))
+        #self.contradiction_value = tf.reduce_mean(logic_regularizer.contradiction_regularization_squared(self.model.original_probs, self.model.reverse_probs))
+
+        self.logic_reg_value = (self.inference_value + self.contradiction_value)/2
+        self.loss = self.model.total_cost + pi*self.logic_reg_value
+
+        self.optimizer = tf.train.AdamOptimizer(self.learning_rate, beta1=0.9, beta2=0.999).minimize(self.loss)
 
         # Boolean stating that training has not been completed, 
         self.completed = False 
@@ -115,6 +127,7 @@ class modelClassifier:
         self.saver = tf.train.Saver()
 
     def get_minibatch(self, dataset, start_index, end_index):
+        end_index = min(end_index, len(dataset))
         indices = range(start_index, end_index)
         premise_vectors = np.vstack([dataset[i]['sentence1_binary_parse_index_sequence'] for i in indices])
         hypothesis_vectors = np.vstack([dataset[i]['sentence2_binary_parse_index_sequence'] for i in indices])
@@ -123,7 +136,12 @@ class modelClassifier:
         return premise_vectors, hypothesis_vectors, labels, genres
 
     def train(self, train_mnli, train_snli, dev_mat, dev_mismat, dev_snli):
-        self.sess = tf.Session()
+        config = tf.ConfigProto()
+        n_threads = int(multiprocessing.cpu_count() * 2)
+        config.intra_op_parallelism_threads = n_threads
+        config.inter_op_parallelism_threads = n_threads
+
+        self.sess = tf.Session(config=config)
         self.sess.run(self.init)
 
         self.max_epochs = FIXED_PARAMETERS["epochs"]
@@ -142,12 +160,12 @@ class modelClassifier:
         if os.path.isfile(ckpt_file + ".meta"):
             if os.path.isfile(ckpt_file + "_best.meta"):
                 self.saver.restore(self.sess, (ckpt_file + "_best"))
-                self.best_dev_mat, dev_cost_mat = evaluate_classifier(self.classify, dev_mat, self.eval_batch_size)
-                best_dev_mismat, dev_cost_mismat = evaluate_classifier(self.classify, dev_mismat, self.eval_batch_size)
-                best_dev_snli, dev_cost_snli = evaluate_classifier(self.classify, dev_snli, self.eval_batch_size)
-                self.best_mtrain_acc, mtrain_cost = evaluate_classifier(self.classify, train_mnli[0:5000], self.eval_batch_size)
+                self.best_dev_mat, dev_cost_mat, _ = evaluate_classifier(self.classify, dev_mat, self.eval_batch_size)
+                best_dev_mismat, dev_cost_mismat, _ = evaluate_classifier(self.classify, dev_mismat, self.eval_batch_size)
+                best_dev_snli, dev_cost_snli, _ = evaluate_classifier(self.classify, dev_snli, self.eval_batch_size)
+                self.best_mtrain_acc, mtrain_cost, _ = evaluate_classifier(self.classify, train_mnli[0:5000], self.eval_batch_size)
                 if self.alpha != 0.:
-                    self.best_strain_acc, strain_cost = evaluate_classifier(self.classify, train_snli[0:5000], self.eval_batch_size)
+                    self.best_strain_acc, strain_cost, _ = evaluate_classifier(self.classify, train_snli[0:5000], self.eval_batch_size)
                     logger.Log("Restored best matched-dev acc: %f\n Restored best mismatched-dev acc: %f\n \
                             Restored best SNLI-dev acc: %f\n Restored best MulitNLI train acc: %f\n \
                             Restored best SNLI train acc: %f" %(self.best_dev_mat, best_dev_mismat, best_dev_snli, 
@@ -167,14 +185,18 @@ class modelClassifier:
         logger.Log("Training...")
         logger.Log("Model will use %s percent of SNLI data during training" %(self.alpha * 100))
 
+        logic_reg_values = []
+        contradiction_values = []
+        inference_values = []
+        batch_times = []
+        loss_values = []
+        regularized_loss = []
+
         for self.epoch in range(self.max_epochs):
             training_data = train_mnli + random.sample(train_snli, beta)
             random.shuffle(training_data)
             avg_cost = 0.
-            total_batch = int(len(training_data) / self.batch_size)
-            logic_reg_values = []
-            batch_times = []
-            loss_values = []
+            total_batch = int(len(training_data) / self.batch_size) + 1
 
             # Loop over all batches in epoch
             for i in range(total_batch):
@@ -190,18 +212,22 @@ class modelClassifier:
                              self.model.keep_rate_ph: self.keep_rate}
 
                 begin_batch_time = time.time()
-                _, c, logic_reg = self.sess.run([self.optimizer, self.model.total_cost, self.logic_reg_value], feed_dict)
+                _, c, logic_reg, inference_val, contradiction_val, reg_loss = self.sess.run([self.optimizer, self.model.total_cost, self.logic_reg_value, self.inference_value, self.contradiction_value, self.loss], feed_dict)
                 batch_time = time.time() - begin_batch_time
                 batch_times += [batch_time]
                 logic_reg_values += [logic_reg]
+                contradiction_values += [contradiction_val]
+                inference_values += [inference_val]
                 loss_values += [c]
+                regularized_loss += [reg_loss]
 
-                if self.display_step is None or (self.step % total_batch) % self.display_step == 0:
+                if self.display_step is None or (self.step % total_batch) % self.display_step == self.display_step - 1:
                     begin_eval_time = time.time()
-                    dev_acc_mat, dev_cost_mat = evaluate_classifier(self.classify, dev_mat, self.eval_batch_size)
-                    dev_acc_mismat, dev_cost_mismat = evaluate_classifier(self.classify, dev_mismat, self.eval_batch_size)
-                    dev_acc_snli, dev_cost_snli = evaluate_classifier(self.classify, dev_snli, self.eval_batch_size)
-                    mtrain_acc, mtrain_cost = evaluate_classifier(self.classify, train_mnli[0:5000], self.eval_batch_size)
+                    dev_acc_mat, dev_cost_mat, dev_confusion = evaluate_classifier(self.classify, dev_mat, self.eval_batch_size)
+                    #dev_acc_mismat, dev_cost_mismat, _ = evaluate_classifier(self.classify, dev_mismat, self.eval_batch_size)
+                    #dev_acc_snli, dev_cost_snli, _ = evaluate_classifier(self.classify, dev_snli, self.eval_batch_size)
+                    #mtrain_acc, mtrain_cost, _ = evaluate_classifier(self.classify, train_mnli[0:5000], self.eval_batch_size)
+                    dev_acc_mismat, dev_cost_mismat, dev_acc_snli, dev_cost_snli, mtrain_acc, mtrain_cost = (0., 0., 0., 0., 0., 0.)
                     eval_time = time.time() - begin_eval_time
 
                     if self.display_step is None:
@@ -213,7 +239,7 @@ class modelClassifier:
 
 
                     if self.alpha != 0.:
-                        strain_acc, strain_cost = evaluate_classifier(self.classify, train_snli[0:5000], self.eval_batch_size)
+                        strain_acc, strain_cost, _ = evaluate_classifier(self.classify, train_snli[0:5000], self.eval_batch_size)
                         logger.Log("Step: %i\t Dev-matched acc: %f\t Dev-mismatched acc: %f\t \
                             Dev-SNLI acc: %f\t MultiNLI train acc: %f\t SNLI train acc: %f"
                                    % (self.step, dev_acc_mat, dev_acc_mismat, dev_acc_snli, mtrain_acc, strain_acc))
@@ -227,14 +253,23 @@ class modelClassifier:
                         logger.Log("Step: %i\t Dev-matched cost: %f\t Dev-mismatched cost: %f\t \
                             Dev-SNLI cost: %f\t MultiNLI train cost: %f" %(self.step, dev_cost_mat,
                                                                            dev_cost_mismat, dev_cost_snli, mtrain_cost))
-
-                    logger.Log("Logic regularization cost: %s (%s)" % (np.mean(logic_reg_values), np.std(logic_reg_values)))
-                    logger.Log("Train loss: %s (%s)" % (np.mean(loss_values), np.std(loss_values)))
-                    logger.Log("Batch time: %s (%s)" % (np.mean(batch_times), np.std(batch_times)))
+                    def statistic_log(name, values):
+                        logger.Log("[epoch %s step %s] %s: Mean=%s Std=%s Min=%s Max=%s" % (self.epoch, self.step, name, np.mean(values), np.std(values), np.min(values), np.max(values)))
+                    logger.Log("[epoch %s step %s] Confusion matrix on dev (target, predicted): %s" % (self.epoch, self.step, dev_confusion))
+                    statistic_log("Contradiction value", contradiction_values)
+                    statistic_log("Inference value", inference_values)
+                    statistic_log("Train loss", loss_values)
+                    statistic_log("Regularized loss", regularized_loss)
+                    statistic_log("Batch time", batch_times)
                     logger.Log("Evaluation time: %s" % (eval_time))
+                    
                     logic_reg_values = []
                     batch_times = []
                     loss_values = []
+                    contradiction_values = []
+                    inference_values = []
+                    regularized_loss = []
+
 
                     improvement_ratio = 100.0 * (1.0 - self.best_dev_mat / dev_acc_mat)
                     if improvement_ratio > 0.1:
@@ -274,9 +309,10 @@ class modelClassifier:
             self.sess.run(self.init)
             self.saver.restore(self.sess, best_path)
             logger.Log("Model restored from file: %s" % best_path)
-        total_batch = int(len(examples) / self.eval_batch_size)
+        total_batch = int(len(examples) / self.eval_batch_size) + 1
         logits = np.empty(3)
         genres = []
+        mean_cost = 0
         for i in range(total_batch):
             minibatch_premise_vectors, minibatch_hypothesis_vectors, minibatch_labels, minibatch_genres = \
                 self.get_minibatch(examples, self.eval_batch_size * i, self.eval_batch_size * (i + 1))
@@ -286,9 +322,10 @@ class modelClassifier:
                                 self.model.keep_rate_ph: 1.0}
             genres += minibatch_genres
             logit, cost = self.sess.run([self.model.logits, self.model.total_cost], feed_dict)
+            mean_cost += 1.0/(i+1)*(cost - mean_cost)
             logits = np.vstack([logits, logit])
 
-        return genres, np.argmax(logits[1:], axis=1), cost
+        return genres, np.argmax(logits[1:], axis=1), mean_cost
 
     def restore(self, best=True):
         if True:

@@ -1,5 +1,7 @@
 import csv
 import sys 
+import collections
+
 
 def evaluate_classifier(classifier, eval_set, batch_size):
     """
@@ -11,13 +13,13 @@ def evaluate_classifier(classifier, eval_set, batch_size):
     """
     correct = 0
     genres, hypotheses, cost = classifier(eval_set)
-    cost = cost / batch_size
-    full_batch = int(len(eval_set) / batch_size) * batch_size
-    for i in range(full_batch):
-        hypothesis = hypotheses[i]
-        if hypothesis == eval_set[i]['label']:
+    confusion_matrix = collections.Counter()
+    for i, predicted in enumerate(hypotheses):
+        target = eval_set[i]['label']
+        confusion_matrix.update([ (target, predicted) ])
+        if predicted == target:
             correct += 1        
-    return correct / float(len(eval_set)), cost
+    return correct / float(len(eval_set)), cost, confusion_matrix
 
 def evaluate_classifier_genre(classifier, eval_set, batch_size):
     """

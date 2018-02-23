@@ -61,5 +61,15 @@ class MyModel(object):
         # Get prediction
         self.logits = tf.matmul(h_drop, self.W_cl) + self.b_cl
 
+        #REVERSE PROBS 
+        h_diff2 = premise_rep - hypothesis_rep
+        mlp_input = tf.concat([hypothesis_rep, premise_rep, h_diff2, h_mul], 1)
+        h_1 = tf.nn.relu(tf.matmul(mlp_input, self.W_0) + self.b_0)
+        h_2 = tf.nn.relu(tf.matmul(h_1, self.W_1) + self.b_1)
+        h_3 = tf.nn.relu(tf.matmul(h_2, self.W_2) + self.b_2)
+        h_drop = tf.nn.dropout(h_3, self.keep_rate_ph)
+        self.reverse_probs = tf.nn.softmax(tf.matmul(h_drop, self.W_cl) + self.b_cl)
+        self.original_probs = tf.nn.softmax(self.logits)
+
         # Define the cost function
         self.total_cost = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(labels=self.y, logits=self.logits))

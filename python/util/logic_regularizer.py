@@ -7,12 +7,30 @@ def inference_rule(prob_ab, prob_ba):
     return 1.0 - tf.maximum(inference_value1 + contradition_value2 - 1.0, 0.0)
 
 
-def contradiction_rule(prob_ab, prob_ba):
+def inference_regularization_squared(prob_ab, prob_ba):
+    inference_value1 = prob_ab[:, 2]
+    contradition_value2 = prob_ba[:, 0]
+    return tf.square(tf.maximum(inference_value1 + contradition_value2 - 1.0, 0.0))
+
+
+def contradiction_rule_v1(prob_ab, prob_ba):
     contradition_value1 = prob_ab[:, 0]
     contradition_value2 = prob_ba[:, 0]
     a = tf.minimum(1.0 - contradition_value1 + contradition_value2, 1.0)
     b = tf.minimum(1.0 - contradition_value2 + contradition_value1, 1.0)
     return tf.maximum(a + b - 1.0, 0.0)
+
+
+def contradiction_regularization_squared(prob_ab, prob_ba): 
+    contradition_prob1 = prob_ab[:, 0]
+    contradition_prob2 = prob_ba[:, 0]
+    return tf.square(contradition_prob1 -  contradition_prob2 )
+
+
+def contradiction_rule(prob_ab, prob_ba): 
+    contradition_prob1 = prob_ab[:, 0]
+    contradition_prob2 = prob_ba[:, 0]
+    return 1.0 - tf.abs(contradition_prob1 -  contradition_prob2 )
 
 
 def calculate_pi(pi_zero, alpha, n_iteration):
