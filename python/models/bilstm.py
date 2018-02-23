@@ -99,9 +99,13 @@ class MyModel(object):
                                       labels=supervised_y, logits=supervised_logits)) / total_supervision,
                                   lambda: tf.constant(0))
 
-        self.inference_value = tf.reduce_mean(
-            -tf.log(logic_regularizer.inference_rule(self.original_probs, self.reverse_probs) + 0.0001))
-        self.contradiction_value = tf.reduce_mean(
-            -tf.log(logic_regularizer.contradiction_rule(self.original_probs, self.reverse_probs) + 0.0001))
+        self.inference_value = tf.reduce_mean(logic_regularizer.semantic_inference(self.original_probs,
+                                                                                   self.reverse_probs))
+        self.contradiction_value = tf.reduce_mean(logic_regularizer.semantic_contradiction(self.original_probs,
+                                                                                           self.reverse_probs))
 
-        self.regularized_loss = self.total_cost + self.pi * (self.inference_value + self.contradiction_value)
+        self.only_one_original_value = tf.reduce_mean(logic_regularizer.semantic_only_one(self.original_probs))
+        self.only_one_reverse_value = tf.reduce_mean(logic_regularizer.semantic_only_one(self.reverse_probs))
+
+        self.regularized_loss = self.total_cost + self.pi * (self.inference_value + self.contradiction_value +
+                                                             self.only_one_original_value + self.only_one_reverse_value)

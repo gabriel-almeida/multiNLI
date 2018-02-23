@@ -7,6 +7,30 @@ def inference_rule(prob_ab, prob_ba):
     return 1.0 - tf.maximum(inference_value1 + contradition_value2 - 1.0, 0.0)
 
 
+def semantic_inference(prob_ab, prob_ba):
+    inference_prob1 = prob_ab[:, 2]
+    contradition_prob2 = prob_ba[:, 0]
+    return -tf.log((1.0 - inference_prob1) * (1.0 - contradition_prob2) +
+                   (1.0 - inference_prob1) * contradition_prob2 +
+                   inference_prob1 * (1.0 - contradition_prob2))
+
+
+def semantic_contradiction(prob_ab, prob_ba):
+    contradiction_prob1 = prob_ab[:, 0]
+    contradiction_prob2 = prob_ba[:, 0]
+    return -tf.log((1.0 - contradiction_prob1) * (1.0 - contradiction_prob2) +
+                   contradiction_prob2 * contradiction_prob2)
+
+
+def semantic_only_one(probs):
+    inference_prob = probs[:, 2]
+    neutral_prob = probs[:, 1]
+    contradition_prob = probs[:, 0]
+    return -tf.log(inference_prob * (1.0 - neutral_prob) * (1.0 - contradition_prob) +
+                   (1.0 - inference_prob) * neutral_prob * (1.0 - contradition_prob) +
+                   (1.0 - inference_prob) * (1.0 - neutral_prob) * contradition_prob)
+
+
 def inference_regularization_squared(prob_ab, prob_ba):
     inference_value1 = prob_ab[:, 2]
     contradition_value2 = prob_ba[:, 0]

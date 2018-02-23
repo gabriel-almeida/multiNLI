@@ -182,6 +182,8 @@ class modelClassifier:
         batch_times = []
         loss_values = []
         regularized_loss = []
+        only_one_original_loss = []
+        only_one_reversed_loss = []
 
         for val in train_mnli:
             if random.random() < self.unsupervised_ratio:
@@ -207,9 +209,11 @@ class modelClassifier:
                              self.model.keep_rate_ph: self.keep_rate, self.model.pi: self.pi}
 
                 begin_batch_time = time.time()
-                _, c, regularized_loss_val, inference_val, contradiction_val = \
+                _, c, regularized_loss_val, inference_val, contradiction_val, \
+                only_one_original_val, only_one_reversed_val = \
                     self.sess.run([self.optimizer, self.model.total_cost, self.model.regularized_loss,
-                                   self.model.inference_value, self.model.contradiction_value], feed_dict)
+                                   self.model.inference_value, self.model.contradiction_value,
+                                   self.model.only_one_original_value, self.model.only_one_reversed_value], feed_dict)
 
                 batch_time = time.time() - begin_batch_time
                 batch_times += [batch_time]
@@ -217,6 +221,8 @@ class modelClassifier:
                 inference_values += [inference_val]
                 loss_values += [c]
                 regularized_loss += [regularized_loss_val]
+                only_one_original_loss += [only_one_original_val]
+                only_one_reversed_loss += [only_one_reversed_val]
 
                 if self.display_step is None or (self.step % total_batch) % self.display_step == self.display_step - 1:
                     begin_eval_time = time.time()
@@ -249,12 +255,15 @@ class modelClassifier:
                         logger.Log("Step: %i\t Dev-matched cost: %f\t Dev-mismatched cost: %f\t \
                             Dev-SNLI cost: %f\t MultiNLI train cost: %f" %(self.step, dev_cost_mat,
                                                                            dev_cost_mismat, dev_cost_snli, mtrain_cost))
+
                     def statistic_log(name, values):
                         logger.Log("[epoch %s step %s] %s: Mean=%s Std=%s Min=%s Max=%s" % (self.epoch, self.step, name, np.mean(values), np.std(values), np.min(values), np.max(values)))
 
                     logger.Log("[epoch %s step %s] Confusion matrix on dev (target, predicted): %s" % (self.epoch, self.step, dev_confusion))
                     statistic_log("Contradiction value", contradiction_values)
                     statistic_log("Inference value", inference_values)
+                    statistic_log("Only one original value", only_one_original_loss)
+                    statistic_log("Only one reversed value", only_one_reversed_loss)
                     statistic_log("Train loss", loss_values)
                     statistic_log("Regularized loss", regularized_loss)
                     statistic_log("Batch time", batch_times)
@@ -265,7 +274,6 @@ class modelClassifier:
                     contradiction_values = []
                     inference_values = []
                     regularized_loss = []
-
 
                     improvement_ratio = 100.0 * (1.0 - self.best_dev_mat / dev_acc_mat)
                     if improvement_ratio > 0.1:
