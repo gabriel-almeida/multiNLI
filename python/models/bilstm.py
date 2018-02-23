@@ -94,8 +94,10 @@ class MyModel(object):
         supervised_y = self.y[:, supervised_idx]
         total_supervision = tf.reduce_sum(tf.cast(supervised_idx, dtype=tf.float32))
 
-        self.total_cost = tf.reduce_sum(tf.nn.sparse_softmax_cross_entropy_with_logits(labels=supervised_y, logits=supervised_logits))
-        self.total_cost = self.total_cost / total_supervision
+        self.total_cost = tf.cond(tf.greater_equal(total_supervision, tf.constant(1)),
+                                  lambda: tf.reduce_sum(tf.nn.sparse_softmax_cross_entropy_with_logits(
+                                      labels=supervised_y, logits=supervised_logits)) / total_supervision,
+                                  lambda: tf.constant(0))
 
         self.inference_value = tf.reduce_mean(
             -tf.log(logic_regularizer.inference_rule(self.original_probs, self.reverse_probs) + 0.0001))
