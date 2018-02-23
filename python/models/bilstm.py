@@ -1,4 +1,5 @@
 import tensorflow as tf
+from util import logic_regularizer
 from util import blocks
 
 class MyModel(object):
@@ -13,6 +14,7 @@ class MyModel(object):
         self.hypothesis_x = tf.placeholder(tf.int32, [None, self.sequence_length])
         self.y = tf.placeholder(tf.int32, [None])
         self.keep_rate_ph = tf.placeholder(tf.float32, [])
+        self.pi = tf.placeholder(tf.float32, None)
 
         ## Define parameters
         # self.E = tf.Variable(embeddings, trainable=emb_train)
@@ -77,17 +79,27 @@ class MyModel(object):
 
         diff2 = tf.subtract(hypothesis_ave, premise_ave)
         h = tf.concat([hypothesis_ave, premise_ave, diff2, mul], 1)
-
-        # MLP layer
         h_mlp = tf.nn.relu(tf.matmul(h, self.W_mlp) + self.b_mlp)
-        # Dropout applied to classifier
         h_drop = tf.nn.dropout(h_mlp, self.keep_rate_ph)
 
-        # Get prediction
         self.reverse_probs = tf.nn.softmax(tf.matmul(h_drop, self.W_cl) + self.b_cl)
         self.original_probs = tf.nn.softmax(self.logits)
 
         ##################
 
         # Define the cost function
-        self.total_cost = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(labels=self.y, logits=self.logits))
+        supervised_idx = tf.not_equal(self.y, -1)
+
+        supervised_logits = self.logits[:, supervised_idx]
+        supervised_y = self.y[:, supervised_idx]
+        total_supervision = tf.reduce_sum(tf.cast(supervised_idx, dtype=tf.float32))
+
+        self.total_cost = tf.reduce_sum(tf.nn.sparse_softmax_cross_entropy_with_logits(labels=supervised_y, logits=supervised_logits))
+        self.total_cost = self.total_cost / total_supervision
+
+        self.inference_value = tf.reduce_mean(
+            -tf.log(logic_regularizer.inference_rule(self.original_probs, self.reverse_probs) + 0.0001))
+        self.contradiction_value = tf.reduce_mean(
+            -tf.log(logic_regularizer.contradiction_rule(self.original_probs, self.reverse_probs) + 0.0001))
+
+        self.regularized_loss = self.total_cost + self.pi * (self.inference_value + self.contradiction_value)

@@ -48,6 +48,7 @@ parser.add_argument("--epochs", type=int, default=10, help="Max number of epochs
 parser.add_argument("--pi", type=float, default=0.01, help="Regularizer strenght in the training")
 parser.add_argument("--eval_batch_size", type=int, default=2000, help="Evaluation minibatch size")
 parser.add_argument("--display_step_ratio", type=float, default=0.1, help="Fraction of the time to evaluate on dev set")
+parser.add_argument("--unsupervised_ratio", type=float, default=0.0, help="Fraction of the train set to remove label")
 parser.add_argument("--patience", type=int, default=10, help="Count of steps to wait for early stop")
 parser.add_argument("--train_file", type=str, default="multinli_1.0.jsonl",
                     help="Name of the train file .jsonl on multinli_1.0/ directory")
@@ -118,7 +119,8 @@ def load_parameters():
         "epochs": args.epochs,
         "eval_batch_size": args.eval_batch_size,
         "display_step_ratio": args.display_step_ratio,
-        "patience": args.patience
+        "patience": args.patience,
+        "unsupervised_ratio": args.unsupervised_ratio
     }
 
     return FIXED_PARAMETERS

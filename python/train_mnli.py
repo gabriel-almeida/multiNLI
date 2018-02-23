@@ -98,6 +98,8 @@ class modelClassifier:
         self.sequence_length = FIXED_PARAMETERS["seq_length"] 
         self.alpha = FIXED_PARAMETERS["alpha"]
         self.word_embeddings = loaded_embeddings
+        self.unsupervised_ratio = FIXED_PARAMETERS["unsupervised_ratio"]
+        self.pi = FIXED_PARAMETERS["pi"]
 
         logger.Log("Building model from %s.py" %(model))
         self.model = MyModel(seq_length=self.sequence_length, emb_dim=self.embedding_dim, 
@@ -105,17 +107,7 @@ class modelClassifier:
                                 emb_train=self.emb_train)
 
         # Perform gradient descent with Adam
-        pi = FIXED_PARAMETERS["pi"]
-        self.inference_value =  tf.reduce_mean(-tf.log(logic_regularizer.inference_rule(self.model.original_probs, self.model.reverse_probs)+0.0001))
-        self.contradiction_value = tf.reduce_mean(-tf.log(logic_regularizer.contradiction_rule(self.model.original_probs, self.model.reverse_probs)+0.0001))
-
-        #self.inference_value = tf.reduce_mean(logic_regularizer.inference_regularization_squared(self.model.original_probs, self.model.reverse_probs))
-        #self.contradiction_value = tf.reduce_mean(logic_regularizer.contradiction_regularization_squared(self.model.original_probs, self.model.reverse_probs))
-
-        self.logic_reg_value = (self.inference_value + self.contradiction_value)/2
-        self.loss = self.model.total_cost + pi*self.logic_reg_value
-
-        self.optimizer = tf.train.AdamOptimizer(self.learning_rate, beta1=0.9, beta2=0.999).minimize(self.loss)
+        self.optimizer = tf.train.AdamOptimizer(self.learning_rate, beta1=0.9, beta2=0.999).minimize(self.model.regularized_loss)
 
         # Boolean stating that training has not been completed, 
         self.completed = False 
@@ -185,12 +177,15 @@ class modelClassifier:
         logger.Log("Training...")
         logger.Log("Model will use %s percent of SNLI data during training" %(self.alpha * 100))
 
-        logic_reg_values = []
         contradiction_values = []
         inference_values = []
         batch_times = []
         loss_values = []
         regularized_loss = []
+
+        for val in train_mnli:
+            if random.random() < self.unsupervised_ratio:
+                val['label'] = -1
 
         for self.epoch in range(self.max_epochs):
             training_data = train_mnli + random.sample(train_snli, beta)
@@ -209,17 +204,19 @@ class modelClassifier:
                 feed_dict = {self.model.premise_x: minibatch_premise_vectors,
                              self.model.hypothesis_x: minibatch_hypothesis_vectors,
                              self.model.y: minibatch_labels,
-                             self.model.keep_rate_ph: self.keep_rate}
+                             self.model.keep_rate_ph: self.keep_rate, self.model.pi: self.pi}
 
                 begin_batch_time = time.time()
-                _, c, logic_reg, inference_val, contradiction_val, reg_loss = self.sess.run([self.optimizer, self.model.total_cost, self.logic_reg_value, self.inference_value, self.contradiction_value, self.loss], feed_dict)
+                _, c, regularized_loss_val, inference_val, contradiction_val = \
+                    self.sess.run([self.optimizer, self.model.total_cost, self.model.regularized_loss,
+                                   self.model.inference_value, self.model.contradiction_value], feed_dict)
+
                 batch_time = time.time() - begin_batch_time
                 batch_times += [batch_time]
-                logic_reg_values += [logic_reg]
                 contradiction_values += [contradiction_val]
                 inference_values += [inference_val]
                 loss_values += [c]
-                regularized_loss += [reg_loss]
+                regularized_loss += [regularized_loss_val]
 
                 if self.display_step is None or (self.step % total_batch) % self.display_step == self.display_step - 1:
                     begin_eval_time = time.time()
@@ -236,7 +233,6 @@ class modelClassifier:
                         # avoid evals next to the end of the epoch
                         self.display_step = int(math.floor(1.0*total_batch/n_evals_epoch))
                         logger.Log("Evaluating on every %s steps (%s time per epoch)" % (self.display_step, n_evals_epoch))
-
 
                     if self.alpha != 0.:
                         strain_acc, strain_cost, _ = evaluate_classifier(self.classify, train_snli[0:5000], self.eval_batch_size)
@@ -255,6 +251,7 @@ class modelClassifier:
                                                                            dev_cost_mismat, dev_cost_snli, mtrain_cost))
                     def statistic_log(name, values):
                         logger.Log("[epoch %s step %s] %s: Mean=%s Std=%s Min=%s Max=%s" % (self.epoch, self.step, name, np.mean(values), np.std(values), np.min(values), np.max(values)))
+
                     logger.Log("[epoch %s step %s] Confusion matrix on dev (target, predicted): %s" % (self.epoch, self.step, dev_confusion))
                     statistic_log("Contradiction value", contradiction_values)
                     statistic_log("Inference value", inference_values)
@@ -263,7 +260,6 @@ class modelClassifier:
                     statistic_log("Batch time", batch_times)
                     logger.Log("Evaluation time: %s" % (eval_time))
                     
-                    logic_reg_values = []
                     batch_times = []
                     loss_values = []
                     contradiction_values = []
