@@ -272,7 +272,7 @@ class modelClassifier:
                     self.epoch, self.step, valid_inference, total_inference, 1.0*valid_inference/total_inference))
                     logger.Log("[epoch %s step %s] Dev contradiction rule: %s consistent / %s total = %s%%" % (
                         self.epoch, self.step, valid_contradiction, total_contradiction,
-                        1.0*valid_contradiction/total_contradiction))
+                        100.0*valid_contradiction/total_contradiction))
 
                     statistic_log("Contradiction value", contradiction_values)
                     statistic_log("Inference value", inference_values)
@@ -345,6 +345,8 @@ class modelClassifier:
             reversed_probs += [reversed_prob]
             mean_cost += 1.0/(i+1)*(cost - mean_cost)
             logits = np.vstack([logits, logit])
+
+        reversed_probs = np.vstack(reversed_probs)
 
         if not include_reverse:
             return genres, np.argmax(logits[1:], axis=1), mean_cost
