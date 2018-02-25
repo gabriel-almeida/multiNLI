@@ -1,9 +1,9 @@
 import csv
-import sys 
+from util import logic_regularizer
 import collections
 
 
-def evaluate_classifier(classifier, eval_set, batch_size):
+def evaluate_classifier(classifier, eval_set, batch_size, include_reverse=False):
     """
     Function to get accuracy and cost of the model, evaluated on a chosen dataset.
 
@@ -12,14 +12,25 @@ def evaluate_classifier(classifier, eval_set, batch_size):
     batch_size: the size of minibatches.
     """
     correct = 0
-    genres, hypotheses, cost = classifier(eval_set)
+    if not include_reverse:
+        genres, hypotheses, cost = classifier(eval_set)
+    else:
+        genres, hypotheses, cost, reversed = classifier(eval_set, include_reverse=True)
+
     confusion_matrix = collections.Counter()
     for i, predicted in enumerate(hypotheses):
         target = eval_set[i]['label']
         confusion_matrix.update([ (target, predicted) ])
         if predicted == target:
-            correct += 1        
-    return correct / float(len(eval_set)), cost, confusion_matrix
+            correct += 1
+
+    if not include_reverse:
+        return correct / float(len(eval_set)), cost, confusion_matrix
+    else:
+        return correct / float(len(eval_set)), cost, confusion_matrix, \
+               logic_regularizer.validate_inference_rule(hypotheses, reversed), \
+               logic_regularizer.validate_contradiction_rule(hypotheses, reversed)
+
 
 def evaluate_classifier_genre(classifier, eval_set, batch_size):
     """
