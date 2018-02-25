@@ -230,7 +230,10 @@ class modelClassifier:
 
                 if self.display_step is None or (self.step % total_batch) % self.display_step == self.display_step - 1:
                     begin_eval_time = time.time()
-                    dev_acc_mat, dev_cost_mat, dev_confusion = evaluate_classifier(self.classify, dev_mat, self.eval_batch_size)
+                    dev_acc_mat, dev_cost_mat, dev_confusion, \
+                    (valid_inference, total_inference), (valid_contradiction, total_contradiction) = \
+                        evaluate_classifier(self.classify, dev_mat, self.eval_batch_size, include_reverse=True)
+
                     #dev_acc_mismat, dev_cost_mismat, _ = evaluate_classifier(self.classify, dev_mismat, self.eval_batch_size)
                     #dev_acc_snli, dev_cost_snli, _ = evaluate_classifier(self.classify, dev_snli, self.eval_batch_size)
                     #mtrain_acc, mtrain_cost, _ = evaluate_classifier(self.classify, train_mnli[0:5000], self.eval_batch_size)
@@ -242,7 +245,7 @@ class modelClassifier:
                         n_evals_epoch = max(total_batch // optimal_display_step, 1)
                         # avoid evals next to the end of the epoch
                         self.display_step = int(math.floor(1.0*total_batch/n_evals_epoch))
-                        logger.Log("Evaluating on every %s steps (%s time per epoch)" % (self.display_step, n_evals_epoch))
+                        logger.Log("Evaluating on every %s steps (%s times per epoch)" % (self.display_step, n_evals_epoch))
 
                     if self.alpha != 0.:
                         strain_acc, strain_cost, _ = evaluate_classifier(self.classify, train_snli[0:5000], self.eval_batch_size)
@@ -264,6 +267,13 @@ class modelClassifier:
                         logger.Log("[epoch %s step %s] %s: Mean=%s Std=%s Min=%s Max=%s" % (self.epoch, self.step, name, np.mean(values), np.std(values), np.min(values), np.max(values)))
 
                     logger.Log("[epoch %s step %s] Confusion matrix on dev (target, predicted): %s" % (self.epoch, self.step, dev_confusion))
+
+                    logger.Log("[epoch %s step %s] Dev inference rule: %s consistent / %s total = %s%%" % (
+                    self.epoch, self.step, valid_inference, total_inference, 1.0*valid_inference/total_inference))
+                    logger.Log("[epoch %s step %s] Dev contradiction rule: %s consistent / %s total = %s%%" % (
+                        self.epoch, self.step, valid_contradiction, total_contradiction,
+                        1.0*valid_contradiction/total_contradiction))
+
                     statistic_log("Contradiction value", contradiction_values)
                     statistic_log("Inference value", inference_values)
                     statistic_log("Only one original value", only_one_original_loss)
@@ -309,7 +319,7 @@ class modelClassifier:
         logger.Log("MultiNLI Train accuracy: %s" %(self.best_mtrain_acc))
         self.completed = True
 
-    def classify(self, examples, test=False):
+    def classify(self, examples, test=False, include_reverse=False):
         # This classifies a list of examples
         if (test == True) or (self.completed == True):
             best_path = os.path.join(FIXED_PARAMETERS["ckpt_path"], modname) + ".ckpt_best"
@@ -321,6 +331,7 @@ class modelClassifier:
         logits = np.empty(3)
         genres = []
         mean_cost = 0
+        reversed_probs = []
         for i in range(total_batch):
             minibatch_premise_vectors, minibatch_hypothesis_vectors, minibatch_labels, minibatch_genres = \
                 self.get_minibatch(examples, self.eval_batch_size * i, self.eval_batch_size * (i + 1))
@@ -329,11 +340,16 @@ class modelClassifier:
                                 self.model.y: minibatch_labels, 
                                 self.model.keep_rate_ph: 1.0}
             genres += minibatch_genres
-            logit, cost = self.sess.run([self.model.logits, self.model.total_cost], feed_dict)
+            logit, cost, reversed_prob = self.sess.run([self.model.logits, self.model.total_cost,
+                                                        self.model.reverse_probs], feed_dict)
+            reversed_probs += [reversed_prob]
             mean_cost += 1.0/(i+1)*(cost - mean_cost)
             logits = np.vstack([logits, logit])
 
-        return genres, np.argmax(logits[1:], axis=1), mean_cost
+        if not include_reverse:
+            return genres, np.argmax(logits[1:], axis=1), mean_cost
+        else:
+            return genres, np.argmax(logits[1:], axis=1), mean_cost, np.argmax(reversed_probs, axis=1)
 
     def restore(self, best=True):
         if True:

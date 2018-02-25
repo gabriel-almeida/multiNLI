@@ -1,6 +1,9 @@
 import tensorflow as tf
 
 
+INFERENCE_CLASS = 2
+CONTRADICTION_CLASS = 0
+
 def inference_rule(prob_ab, prob_ba):
     inference_value1 = prob_ab[:, 2]
     contradition_value2 = prob_ba[:, 0]
@@ -76,3 +79,27 @@ def logic_loss(prob_ab, prob_ba):
     inference = inference_rule(prob_ab, prob_ba)
     contradiction = contradiction_rule(prob_ab, prob_ba)
     return tf.exp(1.0 - (inference + contradiction)/2.0) - 1.0
+
+
+def validate_inference_rule(original_preds, reversed_preds):
+    valid = 0.
+    total = 0.
+    for original, reversed in zip(original_preds, reversed_preds):
+        if original == INFERENCE_CLASS:
+            total += 1.
+            if not reversed == CONTRADICTION_CLASS:
+                valid += 1.
+
+    return valid, total
+
+
+def validate_contradiction_rule(original_preds, reversed_preds):
+    valid = 0.
+    total = 0.
+    for original, reversed in zip(original_preds, reversed_preds):
+        if original == CONTRADICTION_CLASS:
+            total += 1.
+            if reversed == CONTRADICTION_CLASS:
+                valid += 1.
+
+    return valid, total
