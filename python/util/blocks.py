@@ -34,9 +34,9 @@ def biLSTM(inputs, dim, seq_len, name, reuse=False):
     """
     with tf.name_scope(name):
         with tf.variable_scope('forward' + name, reuse=reuse):
-            lstm_fwd = tf.contrib.rnn.LSTMCell(num_units=dim)
+            lstm_fwd = tf.contrib.rnn.LSTMCell(num_units=dim, reuse=reuse)
         with tf.variable_scope('backward' + name, reuse=reuse):
-            lstm_bwd = tf.contrib.rnn.LSTMCell(num_units=dim)
+            lstm_bwd = tf.contrib.rnn.LSTMCell(num_units=dim, reuse=reuse)
 
         hidden_states, cell_states = tf.nn.bidirectional_dynamic_rnn(cell_fw=lstm_fwd, cell_bw=lstm_bwd, inputs=inputs, sequence_length=seq_len, dtype=tf.float32, scope=name)
 

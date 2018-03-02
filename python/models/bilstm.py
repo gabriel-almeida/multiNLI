@@ -105,8 +105,7 @@ class MyModel(object):
         self.contradiction_value = tf.reduce_mean(logic_regularizer.semantic_contradiction(self.original_probs,
                                                                                            self.reverse_probs))
 
-        self.only_one_original_value = tf.reduce_mean(logic_regularizer.semantic_only_one(self.original_probs))
-        self.only_one_reversed_value = tf.reduce_mean(logic_regularizer.semantic_only_one(self.reverse_probs))
+        #self.only_one_original_value = tf.reduce_mean(logic_regularizer.semantic_only_one(self.original_probs))
+        #self.only_one_reversed_value = tf.reduce_mean(logic_regularizer.semantic_only_one(self.reverse_probs))
 
-        self.regularized_loss = self.total_cost + self.pi * (self.inference_value + self.contradiction_value +
-                                                             self.only_one_original_value + self.only_one_reversed_value)
+        self.regularized_loss = self.total_cost + self.pi * (self.inference_value + self.contradiction_value)

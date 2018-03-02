@@ -213,11 +213,9 @@ class modelClassifier:
                              self.model.keep_rate_ph: self.keep_rate, self.model.pi: self.pi}
 
                 begin_batch_time = time.time()
-                _, c, regularized_loss_val, inference_val, contradiction_val, \
-                only_one_original_val, only_one_reversed_val = \
+                _, c, regularized_loss_val, inference_val, contradiction_val = \
                     self.sess.run([self.optimizer, self.model.total_cost, self.model.regularized_loss,
-                                   self.model.inference_value, self.model.contradiction_value,
-                                   self.model.only_one_original_value, self.model.only_one_reversed_value], feed_dict)
+                                   self.model.inference_value, self.model.contradiction_value], feed_dict)
 
                 batch_time = time.time() - begin_batch_time
                 batch_times += [batch_time]
@@ -225,8 +223,6 @@ class modelClassifier:
                 inference_values += [inference_val]
                 loss_values += [c]
                 regularized_loss += [regularized_loss_val]
-                only_one_original_loss += [only_one_original_val]
-                only_one_reversed_loss += [only_one_reversed_val]
 
                 if self.display_step is None or (self.step % total_batch) % self.display_step == self.display_step - 1:
                     begin_eval_time = time.time()
@@ -269,15 +265,13 @@ class modelClassifier:
                     logger.Log("[epoch %s step %s] Confusion matrix on dev (target, predicted): %s" % (self.epoch, self.step, dev_confusion))
 
                     logger.Log("[epoch %s step %s] Dev inference rule: %s consistent / %s total = %s%%" % (
-                    self.epoch, self.step, valid_inference, total_inference, 1.0*valid_inference/total_inference))
+                    self.epoch, self.step, valid_inference, total_inference, 100.0*valid_inference/total_inference))
                     logger.Log("[epoch %s step %s] Dev contradiction rule: %s consistent / %s total = %s%%" % (
                         self.epoch, self.step, valid_contradiction, total_contradiction,
                         100.0*valid_contradiction/total_contradiction))
 
                     statistic_log("Contradiction value", contradiction_values)
                     statistic_log("Inference value", inference_values)
-                    statistic_log("Only one original value", only_one_original_loss)
-                    statistic_log("Only one reversed value", only_one_reversed_loss)
                     statistic_log("Train loss", loss_values)
                     statistic_log("Regularized loss", regularized_loss)
                     statistic_log("Batch time", batch_times)
