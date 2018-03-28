@@ -29,7 +29,8 @@ def evaluate_classifier(classifier, eval_set, batch_size, include_reverse=False)
     else:
         return correct / float(len(eval_set)), cost, confusion_matrix, \
                logic_regularizer.validate_inference_rule(hypotheses, reversed), \
-               logic_regularizer.validate_contradiction_rule(hypotheses, reversed)
+               logic_regularizer.validate_contradiction_rule(hypotheses, reversed), \
+               logic_regularizer.validate_neutral_rule(hypotheses, reversed)
 
 
 def evaluate_classifier_genre(classifier, eval_set, batch_size):

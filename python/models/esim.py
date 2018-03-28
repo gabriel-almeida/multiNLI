@@ -1,5 +1,7 @@
 import tensorflow as tf
 from util import blocks
+from util import logic_regularizer
+
 
 class MyModel(object):
     def __init__(self, seq_length, emb_dim, hidden_dim, embeddings, emb_train):
@@ -11,6 +13,7 @@ class MyModel(object):
         ## Define the placeholders
         self.premise_x = tf.placeholder(tf.int32, [None, self.sequence_length])
         self.hypothesis_x = tf.placeholder(tf.int32, [None, self.sequence_length])
+        self.pi = tf.placeholder(tf.float32, None)
         self.y = tf.placeholder(tf.int32, [None])
         self.keep_rate_ph = tf.placeholder(tf.float32, [])
 

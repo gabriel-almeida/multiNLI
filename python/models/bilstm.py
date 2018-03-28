@@ -100,12 +100,14 @@ class MyModel(object):
         self.total_cost = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(
             labels=self.y, logits=self.logits))
 
-        self.inference_value = tf.reduce_mean(logic_regularizer.semantic_inference(self.original_probs,
-                                                                                   self.reverse_probs))
+        self.inference_value = tf.reduce_mean(logic_regularizer.fuzzy_inference(self.original_probs,
+                                                                                self.reverse_probs))
+        self.neutral_value = tf.reduce_mean(logic_regularizer.fuzzy_neutral(self.original_probs,
+                                                                            self.reverse_probs))
         self.contradiction_value = tf.reduce_mean(logic_regularizer.semantic_contradiction(self.original_probs,
-                                                                                           self.reverse_probs))
+                                                                                        self.reverse_probs))
 
         #self.only_one_original_value = tf.reduce_mean(logic_regularizer.semantic_only_one(self.original_probs))
         #self.only_one_reversed_value = tf.reduce_mean(logic_regularizer.semantic_only_one(self.reverse_probs))
 
-        self.regularized_loss = self.total_cost + self.pi * (self.inference_value + self.contradiction_value)
+        self.regularized_loss = self.total_cost + self.pi * (self.inference_value + 2.0*self.contradiction_value + self.neutral_value)/4.0

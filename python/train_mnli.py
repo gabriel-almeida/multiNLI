@@ -178,6 +178,7 @@ class modelClassifier:
         logger.Log("Model will use %s percent of SNLI data during training" %(self.alpha * 100))
 
         contradiction_values = []
+        neutral_values = []
         inference_values = []
         batch_times = []
         loss_values = []
@@ -207,27 +208,34 @@ class modelClassifier:
 
                 # Run the optimizer to take a gradient step, and also fetch the value of the 
                 # cost function for logging
+                current_pi = min(1.0*self.step/(2.0*total_batch), 1.0)*self.pi
                 feed_dict = {self.model.premise_x: minibatch_premise_vectors,
                              self.model.hypothesis_x: minibatch_hypothesis_vectors,
                              self.model.y: minibatch_labels,
-                             self.model.keep_rate_ph: self.keep_rate, self.model.pi: self.pi}
+                             self.model.keep_rate_ph: self.keep_rate, self.model.pi: current_pi}
 
                 begin_batch_time = time.time()
-                _, c, regularized_loss_val, inference_val, contradiction_val = \
+                _, c, regularized_loss_val, inference_val, contradiction_val, neutral_val = \
                     self.sess.run([self.optimizer, self.model.total_cost, self.model.regularized_loss,
-                                   self.model.inference_value, self.model.contradiction_value], feed_dict)
+                                   self.model.inference_value, self.model.contradiction_value, self.model.neutral_value], feed_dict)
 
                 batch_time = time.time() - begin_batch_time
                 batch_times += [batch_time]
                 contradiction_values += [contradiction_val]
+                neutral_values += [neutral_val]
                 inference_values += [inference_val]
                 loss_values += [c]
                 regularized_loss += [regularized_loss_val]
 
                 if self.display_step is None or (self.step % total_batch) % self.display_step == self.display_step - 1:
+                    if self.step == 0:  # do not evaluate on first batch, because it tends to be much slower than average
+                        self.step += 1
+                        avg_cost += c / (total_batch * self.batch_size)
+                        continue 
                     begin_eval_time = time.time()
+                    print("EVALUATING!")
                     dev_acc_mat, dev_cost_mat, dev_confusion, \
-                    (valid_inference, total_inference), (valid_contradiction, total_contradiction) = \
+                    (valid_inference, total_inference), (valid_contradiction, total_contradiction), (valid_neutral, total_neutral) = \
                         evaluate_classifier(self.classify, dev_mat, self.eval_batch_size, include_reverse=True)
 
                     #dev_acc_mismat, dev_cost_mismat, _ = evaluate_classifier(self.classify, dev_mismat, self.eval_batch_size)
@@ -265,13 +273,18 @@ class modelClassifier:
                     logger.Log("[epoch %s step %s] Confusion matrix on dev (target, predicted): %s" % (self.epoch, self.step, dev_confusion))
 
                     logger.Log("[epoch %s step %s] Dev inference rule: %s consistent / %s total = %s%%" % (
-                    self.epoch, self.step, valid_inference, total_inference, 100.0*valid_inference/total_inference))
+                    self.epoch, self.step, valid_inference, total_inference, 100.0*valid_inference/total_inference if total_inference != 0 else 0))
                     logger.Log("[epoch %s step %s] Dev contradiction rule: %s consistent / %s total = %s%%" % (
                         self.epoch, self.step, valid_contradiction, total_contradiction,
-                        100.0*valid_contradiction/total_contradiction))
+                        100.0*valid_contradiction/total_contradiction if total_contradiction != 0 else 0))
+
+                    logger.Log("[epoch %s step %s] Dev neutral rule: %s consistent / %s total = %s%%" % (
+                        self.epoch, self.step, valid_neutral, total_neutral,
+                        100.0*valid_neutral/total_neutral if total_neutral != 0 else 0))
 
                     statistic_log("Contradiction value", contradiction_values)
                     statistic_log("Inference value", inference_values)
+                    statistic_log("Neutral value", neutral_values)
                     statistic_log("Train loss", loss_values)
                     statistic_log("Regularized loss", regularized_loss)
                     statistic_log("Batch time", batch_times)
