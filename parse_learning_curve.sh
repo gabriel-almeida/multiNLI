@@ -19,6 +19,6 @@ neutral=$(mktemp)
 egrep -o 'Dev neutral rule: .*= [0-9.]+' $log_file | egrep -o '[0-9.]+$' > $neutral
 
 val=$(mktemp)
-egrep -o 'Dev-matched acc: [0-9.]+' $log_file | egrep -o '[0-9.]+' > $val
+egrep -o 'Dev-matched acc: [0-9.]+' $log_file | egrep -o '[0-9.]+' | sed -e 's/$/*100/' | bc > $val
 
-echo "$log_file" && echo -e 'Step\tValidationAcc\tInference\tContradition\tNeutral' && paste $step $val $infe $contra $neutral
+echo "$log_file" && echo -e '$Step$ $ValidationAcc$ $Inference$ $Contradition$ $Neutral$' && paste -d' ' $step $val $infe $contra $neutral

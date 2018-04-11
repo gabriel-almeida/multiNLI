@@ -27,4 +27,4 @@ egrep -o 'Regularized loss: Mean=[0-9.]+' $log_file | egrep -o '[0-9.]+' > $regu
 dev=$(mktemp)
 egrep -o 'Dev-matched cost: [0-9.]+' $log_file | egrep -o '[0-9.]+' > $dev
 
-echo "$log_file" && echo -e 'Step\tOriginalLoss\tDevOriginalLoss\tRegularizedLoss\tInference\tContradition\tNeutral' &&  paste $step $original $dev $regularized $infe $contra $neutral
+echo "$log_file" && echo -e '$Step$ $OriginalLoss$ $DevOriginalLoss$ $RegularizedLoss$ $Inference$ $Contradition$ $Neutral$' &&  paste -d' ' $step $original $dev $regularized $infe $contra $neutral

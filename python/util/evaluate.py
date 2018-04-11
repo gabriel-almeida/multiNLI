@@ -18,9 +18,17 @@ def evaluate_classifier(classifier, eval_set, batch_size, include_reverse=False)
         genres, hypotheses, cost, reversed = classifier(eval_set, include_reverse=True)
 
     confusion_matrix = collections.Counter()
+    confusion_matrix_coherent = collections.Counter()
+    confusion_matrix_not_coherent = collections.Counter
     for i, predicted in enumerate(hypotheses):
         target = eval_set[i]['label']
         confusion_matrix.update([ (target, predicted) ])
+        if include_reverse:
+            if predicted == 0 and reversed != 0 or predicted != 0 and reversed == 0:
+                confusion_matrix_not_coherent.update([ (target, predicted)  ])
+            else:
+                confusion_matrix_coherent.update([ (target, predicted)  ])
+
         if predicted == target:
             correct += 1
 
@@ -30,7 +38,8 @@ def evaluate_classifier(classifier, eval_set, batch_size, include_reverse=False)
         return correct / float(len(eval_set)), cost, confusion_matrix, \
                logic_regularizer.validate_inference_rule(hypotheses, reversed), \
                logic_regularizer.validate_contradiction_rule(hypotheses, reversed), \
-               logic_regularizer.validate_neutral_rule(hypotheses, reversed)
+               logic_regularizer.validate_neutral_rule(hypotheses, reversed), \
+               confusion_matrix_coherent, confusion_matrix_not_coherent
 
 
 def evaluate_classifier_genre(classifier, eval_set, batch_size):

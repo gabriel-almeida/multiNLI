@@ -37,6 +37,23 @@ class MyModel(object):
             emb_drop = tf.nn.dropout(emb, self.keep_rate_ph)
             return emb_drop
 
+        def multiplicative_attention(query, hidden, sizes, hidden_dim, max_size, namespace, reuse):
+            with tf.variable_scope('attention_' + namespace, reuse=reuse):
+               att_w = tf.get_variable("weight", shape=[hidden_dim, hidden_dim], 
+                                       dtype=tf.float32)
+               A = tf.matmul(query, att_w)
+               B = tf.matmul(hidden, tf.expand_dims(A, 2))
+               B = tf.squeeze(B)
+
+               mask = tf.sequence_mask(sizes, max_size, dtype=tf.float32)
+               exp_B = tf.exp(B)*mask
+               denominator = tf.reduce_sum(exp_B, axis=1)
+               softmax = tf.div(exp_B, tf.expand_dims(denominator, 1))
+               weight_sum = tf.reduce_sum(tf.multiply(hidden, 
+                                                      tf.expand_dims(softmax, 2)), axis=1)
+               return weight_sum, softmax
+  
+
         def network(premise, hypothesis, reuse=False):
             # Get lengths of unpadded sentences
             prem_seq_lengths, prem_mask = blocks.length(premise)
@@ -59,10 +76,21 @@ class MyModel(object):
 
             ### Mean pooling
             premise_sum = tf.reduce_sum(premise_bi, 1)
-            premise_ave = tf.div(premise_sum, tf.expand_dims(tf.cast(prem_seq_lengths, tf.float32), -1))
+            premise_ave_old = tf.div(premise_sum, tf.expand_dims(tf.cast(prem_seq_lengths, tf.float32), -1))
 
             hypothesis_sum = tf.reduce_sum(hypothesis_bi, 1)
-            hypothesis_ave = tf.div(hypothesis_sum, tf.expand_dims(tf.cast(hyp_seq_lengths, tf.float32), -1))
+            hypothesis_ave_old = tf.div(hypothesis_sum, tf.expand_dims(tf.cast(hyp_seq_lengths, tf.float32), -1))
+            
+            # premise_ave, _ = multiplicative_attention(hypothesis_ave_old, premise_bi, 
+            #                                          prem_seq_lengths, self.dim*2, 
+            #                                          self.sequence_length, "premise", reuse=reuse)
+
+            # hypothesis_ave, _ = multiplicative_attention(premise_ave_old, hypothesis_bi, 
+            #                                             hyp_seq_lengths, self.dim*2, 
+            #                                             self.sequence_length, "hypothesis", reuse=reuse)
+
+            premise_ave = premise_ave_old
+            hypothesis_ave = hypothesis_ave_old
 
             ### Mou et al. concat layer ###
             diff = tf.subtract(premise_ave, hypothesis_ave)

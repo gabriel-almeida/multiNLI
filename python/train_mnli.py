@@ -198,7 +198,9 @@ class modelClassifier:
             training_data = train_mnli + random.sample(train_snli, beta)
             random.shuffle(training_data)
             avg_cost = 0.
-            total_batch = int(len(training_data) / self.batch_size) + 1
+            total_batch = int(len(training_data) / self.batch_size)
+            if len(training_data) % self.batch_size != 0:
+                total_batch += 1
 
             # Loop over all batches in epoch
             for i in range(total_batch):
@@ -235,8 +237,8 @@ class modelClassifier:
                     begin_eval_time = time.time()
                     print("EVALUATING!")
                     dev_acc_mat, dev_cost_mat, dev_confusion, \
-                    (valid_inference, total_inference), (valid_contradiction, total_contradiction), (valid_neutral, total_neutral) = \
-                        evaluate_classifier(self.classify, dev_mat, self.eval_batch_size, include_reverse=True)
+                    (valid_inference, total_inference), (valid_contradiction, total_contradiction), (valid_neutral, total_neutral), \
+                    coherent_confusion, non_coherent_confusion = evaluate_classifier(self.classify, dev_mat, self.eval_batch_size, include_reverse=True)
 
                     #dev_acc_mismat, dev_cost_mismat, _ = evaluate_classifier(self.classify, dev_mismat, self.eval_batch_size)
                     #dev_acc_snli, dev_cost_snli, _ = evaluate_classifier(self.classify, dev_snli, self.eval_batch_size)
@@ -271,6 +273,8 @@ class modelClassifier:
                         logger.Log("[epoch %s step %s] %s: Mean=%s Std=%s Min=%s Max=%s" % (self.epoch, self.step, name, np.mean(values), np.std(values), np.min(values), np.max(values)))
 
                     logger.Log("[epoch %s step %s] Confusion matrix on dev (target, predicted): %s" % (self.epoch, self.step, dev_confusion))
+                    logger.Log("[epoch %s step %s] Coherent matrix on dev (target, predicted): %s" % (self.epoch, self.step, coherent_confusion))
+                    logger.Log("[epoch %s step %s] Non Coherent  matrix on dev (target, predicted): %s" % (self.epoch, self.step, non_coherent_confusion))
 
                     logger.Log("[epoch %s step %s] Dev inference rule: %s consistent / %s total = %s%%" % (
                     self.epoch, self.step, valid_inference, total_inference, 100.0*valid_inference/total_inference if total_inference != 0 else 0))
@@ -334,7 +338,9 @@ class modelClassifier:
             self.sess.run(self.init)
             self.saver.restore(self.sess, best_path)
             logger.Log("Model restored from file: %s" % best_path)
-        total_batch = int(len(examples) / self.eval_batch_size) + 1
+        total_batch = int(len(examples) / self.eval_batch_size)
+        if len(examples) % self.eval_batch_size != 0:
+            total_batch = total_batch + 1
         logits = np.empty(3)
         genres = []
         mean_cost = 0
