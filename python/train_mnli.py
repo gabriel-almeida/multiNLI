@@ -210,7 +210,9 @@ class modelClassifier:
 
                 # Run the optimizer to take a gradient step, and also fetch the value of the 
                 # cost function for logging
-                current_pi = min(1.0*self.step/(2.0*total_batch), 1.0)*self.pi
+
+                #current_pi = min(1.0*self.step/(2.0*total_batch), 1.0)*self.pi
+                current_pi = self.pi
                 feed_dict = {self.model.premise_x: minibatch_premise_vectors,
                              self.model.hypothesis_x: minibatch_hypothesis_vectors,
                              self.model.y: minibatch_labels,
@@ -235,7 +237,6 @@ class modelClassifier:
                         avg_cost += c / (total_batch * self.batch_size)
                         continue 
                     begin_eval_time = time.time()
-                    print("EVALUATING!")
                     dev_acc_mat, dev_cost_mat, dev_confusion, \
                     (valid_inference, total_inference), (valid_contradiction, total_contradiction), (valid_neutral, total_neutral), \
                     coherent_confusion, non_coherent_confusion = evaluate_classifier(self.classify, dev_mat, self.eval_batch_size, include_reverse=True)
@@ -367,12 +368,11 @@ class modelClassifier:
             return genres, np.argmax(logits[1:], axis=1), mean_cost, np.argmax(reversed_probs, axis=1)
 
     def restore(self, best=True):
-        if True:
+        if best:
             path = os.path.join(FIXED_PARAMETERS["ckpt_path"], modname) + ".ckpt_best"
         else:
             path = os.path.join(FIXED_PARAMETERS["ckpt_path"], modname) + ".ckpt"
         self.sess = tf.Session()
-        self.sess.run(self.init)
         self.saver.restore(self.sess, path)
         logger.Log("Model restored from file: %s" % path)
 
@@ -399,19 +399,24 @@ if test == False:
         % (evaluate_classifier(classifier.classify, test_mismatched, FIXED_PARAMETERS["eval_batch_size"]))[0])
     logger.Log("Acc on SNLI test-set: %s" 
         % (evaluate_classifier(classifier.classify, test_snli, FIXED_PARAMETERS["eval_batch_size"]))[0])
-else: 
-    results, bylength = evaluate_final(classifier.restore, classifier.classify, 
-        [test_matched, test_mismatched, test_snli], FIXED_PARAMETERS["eval_batch_size"])
-    logger.Log("Acc on multiNLI matched dev-set: %s" %(results[0]))
-    logger.Log("Acc on multiNLI mismatched dev-set: %s" %(results[1]))
-    logger.Log("Acc on SNLI test set: %s" %(results[2]))
-    
-    #dumppath = os.path.join("./", modname) + "_length.p"
-    #pickle.dump(bylength, open(dumppath, "wb"))
-
-    # Results by genre,
-    logger.Log("Acc on matched genre dev-sets: %s" 
-        % (evaluate_classifier_genre(classifier.classify, test_matched, FIXED_PARAMETERS["eval_batch_size"])[0]))
-    logger.Log("Acc on mismatched genres dev-sets: %s" 
-        % (evaluate_classifier_genre(classifier.classify, test_mismatched, FIXED_PARAMETERS["eval_batch_size"])[0]))
-
+else:
+    logger.Log("Restoring model...")
+    classifier.restore()
+    def evaluate(setname, dataset):
+        acc_mat, cost_mat, confusion, \
+        (valid_inference, total_inference), (valid_contradiction, total_contradiction), (valid_neutral, total_neutral), \
+        coherent_confusion, non_coherent_confusion = evaluate_classifier(classifier.classify, dataset, classifier.eval_batch_size, include_reverse=True)
+        logger.Log("Evaluating on %s:" % setname)
+        logger.Log("-------------------")
+        logger.Log("Accuracy: %s" % (acc_mat*100.0))
+        logger.Log("Mean Loss: %s" % acc_mat)
+        logger.Log("Total Confusion (target, predicted): %s" % confusion)
+        logger.Log("Coherent Confusion (target, predicted): %s" % coherent_confusion)
+        logger.Log("Non coherent confusion (target, predicted): %s" % non_coherent_confusion)
+        logger.Log("Inference rule: %s consistent / %s total = %s%%" % (valid_inference, total_inference, 100.0*valid_inference/total_inference if total_inference != 0 else 0))
+        logger.Log("Contradiction rule: %s consistent / %s total = %s%%" % (valid_contradiction, total_contradiction, 100.0*valid_contradiction/total_contradiction if total_contradiction != 0 else 0))
+        logger.Log("Neutral rule: %s consistent / %s total = %s%%" % (valid_neutral, total_neutral, 100.0*valid_neutral/total_neutral if total_neutral != 0 else 0))
+        logger.Log("\n")
+    evaluate("Dev Matched", dev_matched)
+    evaluate("Dev Mismatched", dev_mismatched)
+    evaluate("Dev SNLI", dev_snli)

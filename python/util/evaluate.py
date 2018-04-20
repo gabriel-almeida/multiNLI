@@ -19,12 +19,12 @@ def evaluate_classifier(classifier, eval_set, batch_size, include_reverse=False)
 
     confusion_matrix = collections.Counter()
     confusion_matrix_coherent = collections.Counter()
-    confusion_matrix_not_coherent = collections.Counter
+    confusion_matrix_not_coherent = collections.Counter()
     for i, predicted in enumerate(hypotheses):
         target = eval_set[i]['label']
         confusion_matrix.update([ (target, predicted) ])
         if include_reverse:
-            if predicted == 0 and reversed != 0 or predicted != 0 and reversed == 0:
+            if predicted == 0 and reversed[i] != 0 or predicted != 0 and reversed[i] == 0:
                 confusion_matrix_not_coherent.update([ (target, predicted)  ])
             else:
                 confusion_matrix_coherent.update([ (target, predicted)  ])
