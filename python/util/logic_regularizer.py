@@ -1,14 +1,9 @@
 import tensorflow as tf
+from data_processing import LABEL_MAP
 
-
-INFERENCE_CLASS = 2
-NEUTRAL_CLASS = 1
-CONTRADICTION_CLASS = 0
-
-def inference_rule(prob_ab, prob_ba):
-    inference_value1 = prob_ab[:, 2]
-    contradition_value2 = prob_ba[:, 0]
-    return 1.0 - tf.maximum(inference_value1 + contradition_value2 - 1.0, 0.0)
+INFERENCE_CLASS = LABEL_MAP["entailment"] 
+NEUTRAL_CLASS = LABEL_MAP["neutral"]
+CONTRADICTION_CLASS = LABEL_MAP["contradiction"]
 
 
 def semantic_inference(prob_ab, prob_ba):
@@ -42,66 +37,10 @@ def fuzzy_contradiction(prob_ab, prob_ba):
 
 
 def semantic_contradiction(prob_ab, prob_ba):
-    contradiction_prob1 = prob_ab[:, 0]
-    contradiction_prob2 = prob_ba[:, 0]
+    contradiction_prob1 = prob_ab[:, CONTRADICTION_CLASS]
+    contradiction_prob2 = prob_ba[:, CONTRADICTION_CLASS]
     return -tf.log((1.0 - contradiction_prob1) * (1.0 - contradiction_prob2) +
                    contradiction_prob2 * contradiction_prob2)
-
-
-def semantic_only_one(probs):
-    inference_prob = probs[:, 2]
-    neutral_prob = probs[:, 1]
-    contradition_prob = probs[:, 0]
-    return -tf.log(inference_prob * (1.0 - neutral_prob) * (1.0 - contradition_prob) +
-                   (1.0 - inference_prob) * neutral_prob * (1.0 - contradition_prob) +
-                   (1.0 - inference_prob) * (1.0 - neutral_prob) * contradition_prob)
-
-
-def inference_regularization_squared(prob_ab, prob_ba):
-    inference_value1 = prob_ab[:, 2]
-    contradition_value2 = prob_ba[:, 0]
-    return tf.square(tf.maximum(inference_value1 + contradition_value2 - 1.0, 0.0))
-
-
-def contradiction_rule_v1(prob_ab, prob_ba):
-    contradition_value1 = prob_ab[:, 0]
-    contradition_value2 = prob_ba[:, 0]
-    a = tf.minimum(1.0 - contradition_value1 + contradition_value2, 1.0)
-    b = tf.minimum(1.0 - contradition_value2 + contradition_value1, 1.0)
-    return tf.maximum(a + b - 1.0, 0.0)
-
-
-def contradiction_regularization_squared(prob_ab, prob_ba): 
-    contradition_prob1 = prob_ab[:, 0]
-    contradition_prob2 = prob_ba[:, 0]
-    return tf.square(contradition_prob1 -  contradition_prob2 )
-
-
-def contradiction_rule(prob_ab, prob_ba): 
-    contradition_prob1 = prob_ab[:, 0]
-    contradition_prob2 = prob_ba[:, 0]
-    return 1.0 - tf.abs(contradition_prob1 -  contradition_prob2 )
-
-
-def calculate_pi(pi_zero, alpha, n_iteration):
-    return tf.minimum(pi_zero, 1.0 - tf.pow(alpha, n_iteration))
-
-
-def q_star(prob_ab, prob_ba, lambda_entailment, lambda_contradition, C_regularizer):
-    entail_expoent = lambda_entailment*(1.0 - inference_rule(prob_ab, prob_ba))
-    contradict_expoent = lambda_contradition*(1.0 - contradiction_rule(prob_ab, prob_ba))
-
-    return tf.multiply(prob_ab, tf.expand_dims(tf.exp(-C_regularizer*(entail_expoent + contradict_expoent)), dim=1))
-
-
-def kl_divergence(y_target, y_pred):
-    return tf.reduce_mean(tf.multiply(y_target, tf.log(y_pred/y_target)))
-
-
-def logic_loss(prob_ab, prob_ba):
-    inference = inference_rule(prob_ab, prob_ba)
-    contradiction = contradiction_rule(prob_ab, prob_ba)
-    return tf.exp(1.0 - (inference + contradiction)/2.0) - 1.0
 
 
 def validate_inference_rule(original_preds, reversed_preds):

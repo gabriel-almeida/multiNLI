@@ -47,7 +47,8 @@ dev_mismatched = load_nli_data(FIXED_PARAMETERS["dev_mismatched"])
 test_matched = load_nli_data(FIXED_PARAMETERS["test_matched"])
 test_mismatched = load_nli_data(FIXED_PARAMETERS["test_mismatched"])
 
-logger.Log("Loaded sentences MultiNLI - Train: %s | Matched Dev: %s | Mismatched Dev: %s" % (len(training_mnli), len(dev_matched), len(dev_mismatched)))
+logger.Log("Loaded sentences MultiNLI - Train: %s | Matched Dev: %s | Mismatched Dev: %s | Matched Test: %s | Mismatched Test: %s" % (len(training_mnli),\
+           len(dev_matched), len(dev_mismatched), len(test_matched), len(test_mismatched)))
 
 if 'temp.jsonl' in FIXED_PARAMETERS["test_matched"]:
     # Removing temporary empty file that was created in parameters.py
@@ -239,11 +240,9 @@ class modelClassifier:
                     begin_eval_time = time.time()
                     dev_acc_mat, dev_cost_mat, dev_confusion, \
                     (valid_inference, total_inference), (valid_contradiction, total_contradiction), (valid_neutral, total_neutral), \
-                    coherent_confusion, non_coherent_confusion = evaluate_classifier(self.classify, dev_mat, self.eval_batch_size, include_reverse=True)
+                    coherent_confusion, non_coherent_confusion, inversion_matrix = \
+                        evaluate_classifier(self.classify, dev_mat, self.eval_batch_size, include_reverse=True)
 
-                    #dev_acc_mismat, dev_cost_mismat, _ = evaluate_classifier(self.classify, dev_mismat, self.eval_batch_size)
-                    #dev_acc_snli, dev_cost_snli, _ = evaluate_classifier(self.classify, dev_snli, self.eval_batch_size)
-                    #mtrain_acc, mtrain_cost, _ = evaluate_classifier(self.classify, train_mnli[0:5000], self.eval_batch_size)
                     dev_acc_mismat, dev_cost_mismat, dev_acc_snli, dev_cost_snli, mtrain_acc, mtrain_cost = (0., 0., 0., 0., 0., 0.)
                     eval_time = time.time() - begin_eval_time
 
@@ -276,6 +275,7 @@ class modelClassifier:
                     logger.Log("[epoch %s step %s] Confusion matrix on dev (target, predicted): %s" % (self.epoch, self.step, dev_confusion))
                     logger.Log("[epoch %s step %s] Coherent matrix on dev (target, predicted): %s" % (self.epoch, self.step, coherent_confusion))
                     logger.Log("[epoch %s step %s] Non Coherent  matrix on dev (target, predicted): %s" % (self.epoch, self.step, non_coherent_confusion))
+                    logger.Log("[epoch %s step %s] Inversion matrix on dev (original, inverted): %s" % (self.epoch, self.step, inversion_matrix))
 
                     logger.Log("[epoch %s step %s] Dev inference rule: %s consistent / %s total = %s%%" % (
                     self.epoch, self.step, valid_inference, total_inference, 100.0*valid_inference/total_inference if total_inference != 0 else 0))
@@ -331,14 +331,8 @@ class modelClassifier:
         logger.Log("MultiNLI Train accuracy: %s" %(self.best_mtrain_acc))
         self.completed = True
 
-    def classify(self, examples, test=False, include_reverse=False):
+    def classify(self, examples, include_reverse=False):
         # This classifies a list of examples
-        if (test == True) or (self.completed == True):
-            best_path = os.path.join(FIXED_PARAMETERS["ckpt_path"], modname) + ".ckpt_best"
-            self.sess = tf.Session()
-            self.sess.run(self.init)
-            self.saver.restore(self.sess, best_path)
-            logger.Log("Model restored from file: %s" % best_path)
         total_batch = int(len(examples) / self.eval_batch_size)
         if len(examples) % self.eval_batch_size != 0:
             total_batch = total_batch + 1
@@ -354,7 +348,7 @@ class modelClassifier:
                                 self.model.y: minibatch_labels, 
                                 self.model.keep_rate_ph: 1.0}
             genres += minibatch_genres
-            logit, cost, reversed_prob = self.sess.run([self.model.logits, self.model.total_cost,
+            logit, cost, reversed_prob = self.sess.run([self.model.original_probs, self.model.total_cost,
                                                         self.model.reverse_probs], feed_dict)
             reversed_probs += [reversed_prob]
             mean_cost += 1.0/(i+1)*(cost - mean_cost)
@@ -365,7 +359,7 @@ class modelClassifier:
         if not include_reverse:
             return genres, np.argmax(logits[1:], axis=1), mean_cost
         else:
-            return genres, np.argmax(logits[1:], axis=1), mean_cost, np.argmax(reversed_probs, axis=1)
+            return genres, np.argmax(logits[1:], axis=1), mean_cost, np.argmax(reversed_probs, axis=1), logits[1:], reversed_probs
 
     def restore(self, best=True):
         if best:
@@ -386,37 +380,68 @@ load the best checkpoint and get accuracy on the test set. Default setting is to
 
 test = params.train_or_test()
 
-# While test-set isn't released, use dev-sets for testing
-#test_matched = dev_matched
-#test_mismatched = dev_mismatched
-print("ALL RESULTS ON TEST")
-
-if test == False:
+if not test:
     classifier.train(training_mnli, training_snli, dev_matched, dev_mismatched, dev_snli)
-    logger.Log("Acc on matched multiNLI dev-set: %s" 
-        % (evaluate_classifier(classifier.classify, test_matched, FIXED_PARAMETERS["eval_batch_size"]))[0])
-    logger.Log("Acc on mismatched multiNLI dev-set: %s" 
-        % (evaluate_classifier(classifier.classify, test_mismatched, FIXED_PARAMETERS["eval_batch_size"]))[0])
-    logger.Log("Acc on SNLI test-set: %s" 
-        % (evaluate_classifier(classifier.classify, test_snli, FIXED_PARAMETERS["eval_batch_size"]))[0])
 else:
     logger.Log("Restoring model...")
     classifier.restore()
+
+    def print_worst_logic(title, objs, dataset):
+        logger.Log(title)
+        idxs, probs, inv_probs, loss_vals = objs
+        for i, (idx, prob, inv_prob, loss_val) in enumerate(zip(idxs, probs, inv_probs, loss_vals)):
+            curr_data = dataset[idx]
+            logger.Log("Case %s)" % (i+1))
+            logger.Log("P(Inference)=%s | P(Neutral)=%s | P(Contradiction)=%s" % (prob[INFERENCE_CLASS], prob[NEUTRAL_CLASS], prob[CONTRADICTION_CLASS]))
+            logger.Log("P(Inv_Inference)=%s | P(Inv_Neutral)=%s | P(Inv_Contradiction)=%s" % (inv_prob[INFERENCE_CLASS], inv_prob[NEUTRAL_CLASS], inv_prob[CONTRADICTION_CLASS]))
+            logger.Log("Loss=%s" % loss_val)
+            logger.Log("Sent1: %s" % (curr_data["sentence1"].encode('utf-8')))
+            logger.Log("Sent2: %s" % (curr_data["sentence2"].encode('utf-8')))
+        logger.Log("")
+
+    def print_worst_case(title, objs, dataset):
+        logger.Log(title)
+        idxs, probs = objs
+        for i, (idx, prob) in enumerate(zip(idxs, probs)):
+            curr_data = dataset[idx]
+            logger.Log("Case %s) P(Inference)=%s | P(Neutral)=%s | P(Contradiction)=%s" % (i+1, prob[INFERENCE_CLASS], prob[NEUTRAL_CLASS], prob[CONTRADICTION_CLASS]))
+            logger.Log("Sent1: %s" % (curr_data["sentence1"].encode('utf-8')))
+            logger.Log("Sent2: %s" % (curr_data["sentence2"].encode('utf-8')))
+        logger.Log("")
+
     def evaluate(setname, dataset):
         acc_mat, cost_mat, confusion, \
         (valid_inference, total_inference), (valid_contradiction, total_contradiction), (valid_neutral, total_neutral), \
-        coherent_confusion, non_coherent_confusion = evaluate_classifier(classifier.classify, dataset, classifier.eval_batch_size, include_reverse=True)
+        coherent_confusion, non_coherent_confusion, inversion_matrix, \
+        (worst_contradiction, worst_neutral, worst_inference), \
+        (worst_logical_contradiction, worst_logical_neutral, worst_logical_inference) = \
+            evaluate_classifier(classifier.classify, dataset, classifier.eval_batch_size, include_reverse=True, qualitative=True)
         logger.Log("Evaluating on %s:" % setname)
         logger.Log("-------------------")
         logger.Log("Accuracy: %s" % (acc_mat*100.0))
-        logger.Log("Mean Loss: %s" % acc_mat)
+        logger.Log("Mean Loss: %s" % cost_mat)
         logger.Log("Total Confusion (target, predicted): %s" % confusion)
         logger.Log("Coherent Confusion (target, predicted): %s" % coherent_confusion)
         logger.Log("Non coherent confusion (target, predicted): %s" % non_coherent_confusion)
+        logger.Log("Inversion matrix (original, inverted): %s" % inversion_matrix)
         logger.Log("Inference rule: %s consistent / %s total = %s%%" % (valid_inference, total_inference, 100.0*valid_inference/total_inference if total_inference != 0 else 0))
         logger.Log("Contradiction rule: %s consistent / %s total = %s%%" % (valid_contradiction, total_contradiction, 100.0*valid_contradiction/total_contradiction if total_contradiction != 0 else 0))
         logger.Log("Neutral rule: %s consistent / %s total = %s%%" % (valid_neutral, total_neutral, 100.0*valid_neutral/total_neutral if total_neutral != 0 else 0))
+
+        print_worst_logic("Worsts inference logic", worst_logical_inference, dataset)
+        print_worst_logic("Worsts neutral logic", worst_logical_neutral, dataset)
+        print_worst_logic("Worsts contradiction logic", worst_logical_contradiction, dataset)
+
+
+        print_worst_case("Worsts inference case", worst_inference, dataset)
+        print_worst_case("Worsts neutral case", worst_neutral, dataset)
+        print_worst_case("Worsts contradiction case", worst_contradiction, dataset)
+        
         logger.Log("\n")
+    evaluate("Train", training_mnli[:10000])
     evaluate("Dev Matched", dev_matched)
     evaluate("Dev Mismatched", dev_mismatched)
     evaluate("Dev SNLI", dev_snli)
+
+    predictions_kaggle(classifier.classify, test_matched, modname + "_matched_hard")
+    predictions_kaggle(classifier.classify, test_mismatched, modname + "_mismatched_hard")

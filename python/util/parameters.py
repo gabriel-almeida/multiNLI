@@ -73,14 +73,11 @@ else:
     test_mismatched = temp_file
 """
 # Check if test sets are available. If not, create an empty file.
-test_matched = "{}/multinli_0.9/multinli_0.9_test_matched.jsonl".format(args.datapath)
+test_matched = "{}/multinli_1.0/multinli_0.9_test_matched_unlabeled_hard.jsonl".format(args.datapath)
+test_mismatched = "{}/multinli_1.0/multinli_0.9_test_mismatched_unlabeled_hard.jsonl".format(args.datapath)
+test_path = "{}".format(args.datapath)
 
-if os.path.isfile(test_matched):
-    test_matched = "{}/multinli_0.9/multinli_0.9_dev_matched.jsonl".format(args.datapath) #"{}/multinli_0.9/multinli_0.9_test_matched.jsonl".format(args.datapath)
-    test_mismatched = "{}/multinli_0.9/multinli_0.9_dev_mismatched.jsonl".format(args.datapath) #"{}/multinli_0.9/multinli_0.9_test_mismatched.jsonl".format(args.datapath)
-    test_path = "{}".format(args.datapath)
-else:
-    test_path = "{}".format(args.datapath)
+if not os.path.isfile(test_matched):
     temp_file = os.path.join(test_path, "temp.jsonl")
     io.open(temp_file, "wb")
     test_matched = temp_file

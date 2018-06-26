@@ -1,9 +1,14 @@
 import csv
 from util import logic_regularizer
 import collections
+import numpy as np
+import tensorflow as tf
 
+CONTRADICTION_CLASS = logic_regularizer.CONTRADICTION_CLASS
+INFERENCE_CLASS = logic_regularizer.INFERENCE_CLASS
+NEUTRAL_CLASS = logic_regularizer.NEUTRAL_CLASS
 
-def evaluate_classifier(classifier, eval_set, batch_size, include_reverse=False):
+def evaluate_classifier(classifier, eval_set, batch_size, include_reverse=False, qualitative=False):
     """
     Function to get accuracy and cost of the model, evaluated on a chosen dataset.
 
@@ -15,16 +20,33 @@ def evaluate_classifier(classifier, eval_set, batch_size, include_reverse=False)
     if not include_reverse:
         genres, hypotheses, cost = classifier(eval_set)
     else:
-        genres, hypotheses, cost, reversed = classifier(eval_set, include_reverse=True)
+        genres, hypotheses, cost, reversed, probs, inverse_probs = classifier(eval_set, include_reverse=True)
 
     confusion_matrix = collections.Counter()
     confusion_matrix_coherent = collections.Counter()
     confusion_matrix_not_coherent = collections.Counter()
+    inversion_matrix = collections.Counter()
+
+    neutral_idx = []
+    contradiction_idx = []
+    inference_idx = [] 
+
     for i, predicted in enumerate(hypotheses):
         target = eval_set[i]['label']
         confusion_matrix.update([ (target, predicted) ])
         if include_reverse:
-            if predicted == 0 and reversed[i] != 0 or predicted != 0 and reversed[i] == 0:
+            if target == CONTRADICTION_CLASS: 
+                contradiction_idx += [i]
+
+            if target == NEUTRAL_CLASS: 
+                neutral_idx += [i]
+            
+            if target == INFERENCE_CLASS: 
+                inference_idx += [i]
+            
+            inversion_matrix.update([ (predicted, reversed[i]) ])
+            if predicted == CONTRADICTION_CLASS and reversed[i] != CONTRADICTION_CLASS \
+               or predicted != CONTRADICTION_CLASS and reversed[i] == CONTRADICTION_CLASS:
                 confusion_matrix_not_coherent.update([ (target, predicted)  ])
             else:
                 confusion_matrix_coherent.update([ (target, predicted)  ])
@@ -34,12 +56,40 @@ def evaluate_classifier(classifier, eval_set, batch_size, include_reverse=False)
 
     if not include_reverse:
         return correct / float(len(eval_set)), cost, confusion_matrix
-    else:
+    
+    if not qualitative:
         return correct / float(len(eval_set)), cost, confusion_matrix, \
                logic_regularizer.validate_inference_rule(hypotheses, reversed), \
                logic_regularizer.validate_contradiction_rule(hypotheses, reversed), \
                logic_regularizer.validate_neutral_rule(hypotheses, reversed), \
-               confusion_matrix_coherent, confusion_matrix_not_coherent
+               confusion_matrix_coherent, confusion_matrix_not_coherent, inversion_matrix
+
+    def get_worst_logical(loss_fn, original, inverse, sess):
+        loss_vals = sess.run(loss_fn(original, inverse))
+        idxs = np.argsort(loss_vals)[::-1][:5]
+        return idxs, original[idxs, :], inverse[idxs, :], loss_vals[idxs]
+
+    def get_worst_cases(proba, class_idxs, class_id):
+        idxs = np.argsort(proba[class_idxs, class_id])[:5]
+        idxs = [ class_idxs[i] for i in idxs]
+        return idxs, proba[idxs, :]
+
+    with tf.Session() as sess:
+        worst_logical_contradiction = get_worst_logical(logic_regularizer.semantic_contradiction, probs, inverse_probs, sess)
+        worst_logical_neutral = get_worst_logical(logic_regularizer.semantic_neutral, probs, inverse_probs, sess)
+        worst_logical_inference = get_worst_logical(logic_regularizer.semantic_inference, probs, inverse_probs, sess)
+
+    worst_contradiction = get_worst_cases(probs, contradiction_idx, CONTRADICTION_CLASS)
+    worst_neutral = get_worst_cases(probs, neutral_idx, NEUTRAL_CLASS)
+    worst_inference = get_worst_cases(probs, inference_idx, INFERENCE_CLASS)
+
+    return correct / float(len(eval_set)), cost, confusion_matrix, \
+               logic_regularizer.validate_inference_rule(hypotheses, reversed), \
+               logic_regularizer.validate_contradiction_rule(hypotheses, reversed), \
+               logic_regularizer.validate_neutral_rule(hypotheses, reversed), \
+               confusion_matrix_coherent, confusion_matrix_not_coherent, inversion_matrix, \
+               (worst_contradiction, worst_neutral, worst_inference), \
+               (worst_logical_contradiction, worst_logical_neutral, worst_logical_inference)
 
 
 def evaluate_classifier_genre(classifier, eval_set, batch_size):
@@ -140,7 +190,7 @@ def evaluate_final(restore, classifier, eval_sets, batch_size):
     return percentages, length_results
 
 
-def predictions_kaggle(classifier, eval_set, batch_size, name):
+def predictions_kaggle(classifier, eval_set, name):
     """
     Get comma-separated CSV of predictions.
     Output file has two columns: pairID, prediction
@@ -151,7 +201,7 @@ def predictions_kaggle(classifier, eval_set, batch_size, name):
     2: "contradiction"
     }
 
-    hypotheses = classifier(eval_set)
+    _, hypotheses, _ = classifier(eval_set)
     predictions = []
     
     for i in range(len(eval_set)):
